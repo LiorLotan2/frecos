@@ -30,7 +30,6 @@ def main():
                 fontsize=10, color="#c0392b")
     ax.set_xlabel("cache size (entries)")
     ax.set_ylabel("hit rate (median, 95% CI)")
-    ax.set_title("Cache-size sweep: hit rate saturates past the knee")
     fig.tight_layout()
     out = save_figure(fig, "fig4_cache_size_knee.png")
     print(out)

@@ -40,8 +40,7 @@ def main():
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(["global", "learned", "oracle"])
-    ax.set_ylabel("stale hit rate (median, 95% CI)")
-    ax.set_title("Bracket: lambda source vs stale hit rate (W1, 10 seeds/point)")
+    ax.set_ylabel("stale-hit-rate (median, 95% CI)")
     ax.legend()
     fig.tight_layout()
     out = save_figure(fig, "fig2_brackets.png")

@@ -18,6 +18,7 @@ fixed call order, so the same seed always reproduces the same trace byte for byt
 """
 import argparse
 import json
+import math
 
 import numpy as np
 
@@ -95,6 +96,18 @@ def zipf_pick(n_items, zipf_skew, rng):
     return rng.choice(n_items, p=weights)
 
 
+def draw_half_life(scale, rng, shape=1.0):
+    """Exponential when shape=1.0 (the fitter's own model, matched by construction).
+    shape=2.0 draws from a Weibull instead, same mean as the exponential with that scale,
+    so the fitter's exponential assumption is misspecified without changing the average
+    staleness rate the trace exhibits.
+    """
+    if shape == 1.0:
+        return float(rng.exponential(scale=scale))
+    weibull_scale = scale / math.gamma(1.0 + 1.0 / shape)
+    return float(weibull_scale * rng.weibull(shape))
+
+
 def draw_cost_and_size(params, cluster_id, rng):
     regen_cost = float(rng.lognormal(
         params["regen_cost_mu"][cluster_id], params["regen_cost_sigma"][cluster_id]
@@ -136,7 +149,7 @@ def _force_staleness_boundary_crossings(rows, params, rng):
 def generate_trace(
     n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
     paraphrase_frac=0.25, longtail_frac=0.20, repeat_frac=0.20,
-    base_mean_gap_seconds=3600.0,
+    base_mean_gap_seconds=3600.0, half_life_shape=1.0,
 ):
     if n_clusters < 1 or n_queries < 1 or n_tenants < 1:
         raise ValueError("n_clusters, n_queries, n_tenants must be positive")
@@ -171,7 +184,9 @@ def generate_trace(
         answer_id = next_answer_id
         next_answer_id += 1
         t = float(canonical_times[i])
-        half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
+        half_life = draw_half_life(
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+        )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
@@ -202,7 +217,9 @@ def generate_trace(
         canonical = pick_canonical(rng)
         cluster_id = canonical["cluster_id"]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
-        half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
+        half_life = draw_half_life(
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+        )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
@@ -223,7 +240,9 @@ def generate_trace(
         cluster_id = nonempty_clusters[rng.integers(len(nonempty_clusters))]
         span = canonical_gaps.sum() * 1.3 if n_canonical else mean_gap
         t = BASE_TIME + float(rng.uniform(0, span))
-        half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
+        half_life = draw_half_life(
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+        )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
@@ -248,7 +267,7 @@ def generate_trace(
         answer_id = canonical["answer_id"]
         half_life_scale = params["half_life_scale"][cluster_id]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
-        half_life = float(rng.exponential(scale=half_life_scale))
+        half_life = draw_half_life(half_life_scale, rng, shape=half_life_shape)
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
