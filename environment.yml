@@ -1,0 +1,14 @@
+name: frecos
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy
+      - cachetools
+      - requests
+      - pytest
+      - pytest-benchmark
+      - flake8
+      - psutil

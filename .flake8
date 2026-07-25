@@ -1,0 +1,7 @@
+[flake8]
+max-line-length = 100
+exclude = vendor
+# contracts.py is copied verbatim from the plan and is frozen; its
+# hand-aligned formatting is intentional and not to be reflowed.
+per-file-ignores =
+    gptcache_ext/contracts.py:E221,E301,E302
