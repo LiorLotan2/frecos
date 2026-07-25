@@ -3,6 +3,10 @@
 Status: DRAFT — awaiting user review
 Date: 2026-07-25
 
+"FreCoS" (Frequency-Cost-Staleness eviction) is a name coined for this project, not an
+established term from prior literature — stated as such in the report, not implied
+otherwise.
+
 ## 1. Problem statement
 
 Production LLM-serving systems (multi-tenant, per-geo, catalog-driven — the kind of
@@ -66,6 +70,13 @@ freshness(age, λ) = exp(-λ · age)
   cached-query embeddings, fixed at cache-build time — no online re-clustering, keeps this
   tractable and reproducible).
 - Evict lowest `value(entry)`.
+
+**Scoping tradeoff, stated up front (not discovered later):** static clustering means
+`λ_cluster`/`TTL_cluster` degrade under semantic drift (topics shifting over a run). This
+is a deliberate reproducibility choice — dynamic re-clustering makes runs non-deterministic
+and harder to reproduce (30% of grade), which outweighs the realism cost for this project's
+scope. Stated explicitly in the report's Discussion and named as the lead Future Work item
+(§7), not left as an implicit limitation.
 
 Nearest prior art: GDSF (Cherkasova & Ciardo, HPCN 2001) — cost×frequency with global-clock
 aging, no freshness semantics, no clustering. SCALM (arXiv:2406.00025) — clusters for cache
@@ -157,6 +168,17 @@ path) rather than aspirational.
 - This ground truth is what makes stale-hit-rate measurable at all — no public dataset
   carries "is this answer still true at time T" labels.
 
+**Realism risk and mitigation.** Stale-hit-rate and cost-saved both depend on the
+generator's staleness-half-life and regen-cost distributions being credible, not
+hand-picked. Mitigation: calibrate both distributions against a public LLM trace dataset
+(e.g. Azure LLM Inference Trace, or OpenAI/Anthropic usage-pattern reports where available)
+rather than inventing constants — regen-cost distribution from real token-length/latency
+traces, staleness half-life from a defensible proxy (e.g. observed content-update
+frequency in a public catalog/news dataset) since no trace directly labels "answer
+half-life." The report must show the synthetic distribution plotted against the real trace
+distribution it's calibrated from, as a credibility check — this is load-bearing for the
+Performance Gain grade (15%), since an unrealistic generator undermines any claimed gain.
+
 **Secondary — public QA dataset** (e.g. an existing open QA/paraphrase set GPTCache
 benchmarks already use) for external validity on hit-rate/latency, without staleness
 claims (no ground-truth staleness labels available there).
@@ -196,6 +218,11 @@ dispatching-parallel-agents`):
    benchmark runs writing to its own results directory, no shared state.
 6. **Analysis (1 agent):** consumes all results directories, produces plots (hit-rate
    curves, latency distributions, relative-improvement tables) and the experiments PDF.
+   Full sweep × ablation matrix produces far more figures than an 8–12 page report can
+   hold — explicit mandate: surface only the 3–4 most statistically significant findings
+   (largest effect size, tightest confidence interval) as the headline figures; every other
+   result goes into a supplementary CSV/appendix, cited by summary statistic, not plotted.
+   This constraint is given to the agent directly, not left to its judgment at write time.
 7. **Report-writing (sequential, human-in-the-loop):** the 8–12 page report is drafted
    from the analysis output + design spec, reviewed by the user before submission — not
    subagent-authored end to end, since this is the graded narrative.
