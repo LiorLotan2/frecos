@@ -1,8 +1,13 @@
-"""FreCoS eviction policy: value = log(1+freq) * log(1+kappa*regen_cost) * exp(-lambda*age) / size.
+"""FreCoS eviction policy: value = log(2+freq) * log(1+kappa*regen_cost) * exp(-lambda*age) / size.
 
 Registered as a real GPTCache EvictionBase subclass (see register() at the bottom) so it can
 be selected the same way stock policies are, but the scoring logic itself is plain Python and
 is what tests/test_frecos.py exercises directly.
+
+The freq term uses log(2+freq), not the log(1+freq) in the original design note: at freq=0,
+log(1+0) is exactly 0 and zeroes the whole product regardless of cost, age, or size, so a
+brand-new entry would always be the eviction victim. log(2+freq) keeps the same shape (still
+concave, still increasing) while giving a fresh entry a strictly positive score.
 """
 import math
 from typing import Optional, Sequence
@@ -34,7 +39,7 @@ class FreCoSEviction:
         age = now - meta.create_on
         lambda_c = self.staleness_table.get(meta.cluster_id).lambda_
         score = (
-            math.log1p(meta.freq)
+            math.log(2.0 + meta.freq)
             * math.log1p(self.kappa * meta.regen_cost)
             * math.exp(-lambda_c * age)
         )
