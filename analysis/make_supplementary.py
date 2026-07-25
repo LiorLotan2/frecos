@@ -24,7 +24,9 @@ def main():
             hit_med, hit_lo, hit_hi = bootstrap_median_ci(hit_groups[k])
             writer.writerow(["sweeps/cluster_k", k, "hit_rate", hit_med, hit_lo, hit_hi])
             stale_med, stale_lo, stale_hi = bootstrap_median_ci(stale_groups[k])
-            writer.writerow(["sweeps/cluster_k", k, "stale_hit_rate", stale_med, stale_lo, stale_hi])
+            writer.writerow(
+                ["sweeps/cluster_k", k, "stale_hit_rate", stale_med, stale_lo, stale_hi]
+            )
     print(out_path)
 
 

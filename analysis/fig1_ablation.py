@@ -45,8 +45,10 @@ def main():
     ax.set_xticklabels([ROW_LABELS[k] for k in ROW_ORDER], rotation=12, ha="right")
     ax.set_ylabel("stale hit rate (median, 95% CI)")
     ax.set_title("Stale-hit-rate by ablation row (W1, 10 seeds/row)")
-    ax.axhline(medians[ROW_ORDER.index(FLOOR_ROW)], color="#c0392b", linestyle="--",
-                linewidth=1, alpha=0.6, label="row 2 floor")
+    ax.axhline(
+        medians[ROW_ORDER.index(FLOOR_ROW)], color="#c0392b", linestyle="--",
+        linewidth=1, alpha=0.6, label="row 2 floor",
+    )
     ax.legend()
     fig.tight_layout()
     out = save_figure(fig, "fig1_ablation_stale_hit_rate.png")

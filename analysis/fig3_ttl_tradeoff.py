@@ -27,8 +27,10 @@ def main():
     stale_med = [s[0] for s in stale_stats]
     stale_lo = [stale_med[i] - stale_stats[i][1] for i in range(4)]
     stale_hi = [stale_stats[i][2] - stale_med[i] for i in range(4)]
-    l1 = ax1.errorbar(x, stale_med, yerr=[stale_lo, stale_hi], fmt="o-", capsize=4,
-                       color="#c0392b", label="stale hit rate")
+    l1 = ax1.errorbar(
+        x, stale_med, yerr=[stale_lo, stale_hi], fmt="o-", capsize=4,
+        color="#c0392b", label="stale hit rate",
+    )
     ax1.set_xlabel("TTL confidence")
     ax1.set_ylabel("stale hit rate", color="#c0392b")
     ax1.tick_params(axis="y", labelcolor="#c0392b")
@@ -37,8 +39,10 @@ def main():
     hit_med = [h[0] for h in hit_stats]
     hit_lo = [hit_med[i] - hit_stats[i][1] for i in range(4)]
     hit_hi = [hit_stats[i][2] - hit_med[i] for i in range(4)]
-    l2 = ax2.errorbar(x, hit_med, yerr=[hit_lo, hit_hi], fmt="s--", capsize=4,
-                       color="#2c3e50", label="hit rate")
+    l2 = ax2.errorbar(
+        x, hit_med, yerr=[hit_lo, hit_hi], fmt="s--", capsize=4,
+        color="#2c3e50", label="hit rate",
+    )
     ax2.set_ylabel("hit rate", color="#2c3e50")
     ax2.tick_params(axis="y", labelcolor="#2c3e50")
 
