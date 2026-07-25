@@ -1,0 +1,331 @@
+"""Trace replay harness. Produces one results-CSV row (plan sec 2.4) per run.
+
+No LLM is ever called here. This is a pure trace replayer: on a miss, the "response" is
+whatever answer_id the trace says was generated, at whatever regen_cost and size_bytes
+the trace recorded. This is a validity limitation, not an oversight, and the report's
+Experimental Setup must say so plainly (plan sec 2.5).
+
+Miss latency is simulated, not measured, since there is no LLM call to time. It is drawn
+from a log-normal scaled by size_bytes, seeded per (seed, query_id) so replay order never
+affects the result. This distribution is not fit to any real trace (that calibration is
+out of scope for this card, see A5); a later pass can swap it out once real numbers exist.
+
+Hit latency and extension overhead (index lookup + gate check) are measured for real with
+time.perf_counter() around the actual decide() call.
+
+This harness's built-in index does exact-text-match lookup, the same stand-in used in
+tests/test_stock_parity.py. No embedding-based semantic index exists on main yet (that is
+A3/A5 territory), so paraphrase pairs in a trace will not hit here until a real index is
+wired in later. Gate, eviction policy, and staleness table are supplied by the caller and
+only need to satisfy the Protocols in gptcache_ext.contracts.
+"""
+import hashlib
+import math
+import random
+import subprocess
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+import psutil
+
+from gptcache_ext.contracts import Decision, EntryMeta
+from gptcache_ext.pipeline import decide
+
+from benchmarks.metrics import (
+    ServedQuery,
+    cost_saved_usd,
+    cost_spent_usd,
+    false_hit_rate,
+    hit_rate,
+    latency_stats,
+    overhead_mean_ms,
+    stale_hit_rate,
+    throughput_qps,
+)
+
+# tests/ has no __init__.py but works as an implicit namespace package (PEP 420) as
+# long as the repo root is on sys.path, which the Makefile's PYTHONPATH guarantees.
+# So the harness imports tests.invariants directly rather than duplicating the checks.
+from tests.invariants import (
+    check_age_from_create_on_not_last_access,
+    check_budget_respected,
+    check_no_stale_serve,
+    check_no_valid_until_leak,
+    check_select_victim_is_argmin,
+)
+
+CSV_COLUMNS = [
+    "run_id", "workload", "policy", "gate_enabled", "lambda_source", "cache_size_entries",
+    "cluster_count_k", "ttl_confidence", "seed", "split",
+    "n_queries", "n_hits", "n_misses", "n_stale_hits_served", "n_stale_hits_prevented",
+    "n_false_hits",
+    "hit_rate", "stale_hit_rate", "false_hit_rate",
+    "cost_saved_usd", "cost_spent_usd",
+    "latency_mean_ms", "latency_p50_ms", "latency_p95_ms", "latency_p99_ms",
+    "throughput_qps", "overhead_mean_ms", "peak_rss_mb", "cpu_pct",
+    "git_sha", "timestamp",
+]
+
+WARMUP_FRACTION = 0.1
+INDEX_MATCH_RANK = 1.0
+INDEX_THRESHOLD = 0.5
+
+
+def _git_sha() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+def _seeded_rng(seed: int, query_id: int) -> random.Random:
+    """Deterministic per-(seed, query_id) RNG, independent of replay order or of any
+    other row's draw. A running global RNG would make the simulated latency for query
+    N depend on how many queries came before it, breaking the "same seed, same query_id
+    -> same latency" requirement."""
+    digest = hashlib.sha256(f"{seed}:{query_id}".encode()).digest()
+    local_seed = int.from_bytes(digest[:8], "big")
+    return random.Random(local_seed)
+
+
+def _simulate_miss_latency_ms(seed: int, query_id: int, size_bytes: int) -> float:
+    """Placeholder distribution: log-normal, scaled by size_bytes. Not fit to any real
+    trace (Azure LLM Inference Trace calibration is A5's job, out of scope here)."""
+    rng = _seeded_rng(seed, query_id)
+    base_ms = rng.lognormvariate(mu=math.log(80.0), sigma=0.5)
+    return base_ms * (1.0 + size_bytes / 2000.0)
+
+
+class ExactMatchIndex:
+    """Minimal Index (gptcache_ext.pipeline.Index protocol) backed by a dict keyed on
+    exact query text. Owns entry storage and eviction so the harness has something
+    concrete to drive decide() against."""
+
+    def __init__(self, budget: int, eviction_policy):
+        self.budget = budget
+        self.eviction_policy = eviction_policy
+        self._by_text: Dict[str, EntryMeta] = {}
+        self._entry_id_to_text: Dict[int, str] = {}
+        self._next_id = 0
+
+    def search(self, query: str):
+        meta = self._by_text.get(query)
+        if meta is None:
+            return None
+        return _Candidate(rank=INDEX_MATCH_RANK, meta=meta)
+
+    def contains(self, text: str) -> bool:
+        return text in self._by_text
+
+    def _current_metas(self) -> List[EntryMeta]:
+        return list(self._by_text.values())
+
+    def insert(self, text: str, meta_kwargs: dict, now: float) -> EntryMeta:
+        entry_id = self._next_id
+        self._next_id += 1
+        meta = EntryMeta(entry_id=entry_id, **meta_kwargs)
+        self._evict_if_over_budget(now, incoming=1)
+        self._by_text[text] = meta
+        self._entry_id_to_text[entry_id] = text
+        return meta
+
+    def refresh(self, text: str, meta_kwargs: dict, now: float) -> EntryMeta:
+        """Replace a stale entry's metadata in place, keeping its entry_id and not
+        counting against the budget as a new insert."""
+        old_meta = self._by_text[text]
+        meta = EntryMeta(entry_id=old_meta.entry_id, **meta_kwargs)
+        self._by_text[text] = meta
+        return meta
+
+    def bump_freq(self, text: str) -> None:
+        meta = self._by_text[text]
+        self._by_text[text] = EntryMeta(
+            entry_id=meta.entry_id, cluster_id=meta.cluster_id, answer_id=meta.answer_id,
+            create_on=meta.create_on, last_access=meta.last_access,
+            valid_until=meta.valid_until, freq=meta.freq + 1.0,
+            regen_cost=meta.regen_cost, size_bytes=meta.size_bytes,
+        )
+
+    def _evict_if_over_budget(self, now: float, incoming: int) -> None:
+        while len(self._by_text) + incoming > self.budget and self._by_text:
+            metas = self._current_metas()
+            victim_id = self.eviction_policy.select_victim(metas, now)
+            check_select_victim_is_argmin(self.eviction_policy, metas, now)
+            victim_text = self._entry_id_to_text.pop(victim_id)
+            del self._by_text[victim_text]
+        check_budget_respected(len(self._by_text) + incoming, self.budget)
+
+
+@dataclass
+class _Candidate:
+    rank: float
+    meta: EntryMeta
+
+
+def _meta_kwargs_from_row(row: dict, freq: float = 0.0) -> dict:
+    return dict(
+        cluster_id=row["cluster_id"],
+        answer_id=row["answer_id"],
+        create_on=row["t"],
+        last_access=row["t"],
+        valid_until=row["valid_until"],
+        freq=freq,
+        regen_cost=row["regen_cost"],
+        size_bytes=row["size_bytes"],
+    )
+
+
+def _replay(trace: Sequence[dict], config, seed: int, gate, eviction_policy, staleness_table):
+    """Replays the eval split of trace through decide(), applies the 10% warmup cut,
+    and returns the list of scored ServedQuery rows. Runs A2's invariant checks inline."""
+    check_no_valid_until_leak()
+    # NullGate (gate_enabled=False) is a no-op by design and would fail this
+    # regression check trivially, so it only applies when a real staleness gate
+    # is wired in.
+    if config.gate_enabled:
+        check_age_from_create_on_not_last_access(gate)
+
+    eval_rows = sorted((r for r in trace if r["split"] == "eval"), key=lambda r: r["t"])
+    n_warmup = math.ceil(len(eval_rows) * WARMUP_FRACTION)
+    warmup_rows, scored_source_rows = eval_rows[:n_warmup], eval_rows[n_warmup:]
+
+    index = ExactMatchIndex(config.cache_size_entries, eviction_policy)
+    scored: List[ServedQuery] = []
+
+    def process(row: dict, record: bool) -> Optional[ServedQuery]:
+        start = time.perf_counter()
+        decision, meta = decide(
+            row["text"], index, threshold=INDEX_THRESHOLD, gate=gate, now=row["t"]
+        )
+        overhead_ms = (time.perf_counter() - start) * 1000.0
+
+        if decision == Decision.HIT:
+            index.bump_freq(row["text"])
+            latency_ms = overhead_ms
+            served_answer_id = meta.answer_id
+            served_valid_until = meta.valid_until
+            regen_cost = row["regen_cost"]
+        else:
+            miss_latency_ms = _simulate_miss_latency_ms(seed, row["query_id"], row["size_bytes"])
+            latency_ms = overhead_ms + miss_latency_ms
+            served_answer_id = -1
+            served_valid_until = float("inf")
+            regen_cost = row["regen_cost"]
+            if decision == Decision.MISS_STALE:
+                index.refresh(row["text"], _meta_kwargs_from_row(row), now=row["t"])
+            elif not index.contains(row["text"]):
+                index.insert(row["text"], _meta_kwargs_from_row(row), now=row["t"])
+
+        if config.gate_enabled and decision == Decision.HIT:
+            check_no_stale_serve(meta, row["t"], staleness_table, served=True)
+
+        if not record:
+            return None
+        return ServedQuery(
+            decision=decision,
+            served_answer_id=served_answer_id,
+            served_valid_until=served_valid_until,
+            query_answer_id=row["answer_id"],
+            serve_time=row["t"],
+            regen_cost=regen_cost,
+            latency_ms=latency_ms,
+            overhead_ms=overhead_ms,
+        )
+
+    for row in warmup_rows:
+        process(row, record=False)
+    for row in scored_source_rows:
+        result = process(row, record=True)
+        scored.append(result)
+
+    return scored
+
+
+def run_harness(
+    trace: Sequence[dict],
+    config: Any,
+    seed: int,
+    gate: Any,
+    eviction_policy: Any,
+    staleness_table: Any,
+    workload: str = "w1",
+    run_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Replays trace through the pipeline and returns one plan-sec-2.4 row.
+
+    trace: sequence of dict rows conforming to the plan sec 2.3 schema.
+    config: a gptcache_ext.config.Config.
+    gate, eviction_policy, staleness_table: objects satisfying the matching Protocols
+        in gptcache_ext.contracts. This module never imports concrete implementations.
+    """
+    process = psutil.Process()
+    rss_before = process.memory_info().rss
+    process.cpu_percent(interval=None)  # primes the internal counter
+
+    scored = _replay(trace, config, seed, gate, eviction_policy, staleness_table)
+
+    cpu_pct = process.cpu_percent(interval=None)
+    rss_after = process.memory_info().rss
+    peak_rss_mb = max(rss_before, rss_after) / (1024 * 1024)
+
+    n_hits = sum(1 for r in scored if r.decision == Decision.HIT)
+    n_misses = len(scored) - n_hits
+    n_stale_hits_served = sum(
+        1 for r in scored if r.decision == Decision.HIT and r.serve_time > r.served_valid_until
+    )
+    n_stale_hits_prevented = sum(1 for r in scored if r.decision == Decision.MISS_STALE)
+    n_false_hits = sum(
+        1 for r in scored
+        if r.decision == Decision.HIT and r.served_answer_id != r.query_answer_id
+    )
+    latency_mean, latency_p50, latency_p95, latency_p99 = latency_stats(scored)
+
+    return {
+        "run_id": run_id or f"{workload}-{config.eviction_policy}-{seed}",
+        "workload": workload,
+        "policy": config.eviction_policy,
+        "gate_enabled": config.gate_enabled,
+        "lambda_source": config.lambda_source,
+        "cache_size_entries": config.cache_size_entries,
+        "cluster_count_k": config.cluster_count_k,
+        "ttl_confidence": config.ttl_confidence,
+        "seed": seed,
+        "split": "eval",
+        "n_queries": len(scored),
+        "n_hits": n_hits,
+        "n_misses": n_misses,
+        "n_stale_hits_served": n_stale_hits_served,
+        "n_stale_hits_prevented": n_stale_hits_prevented,
+        "n_false_hits": n_false_hits,
+        "hit_rate": hit_rate(scored),
+        "stale_hit_rate": stale_hit_rate(scored),
+        "false_hit_rate": false_hit_rate(scored),
+        "cost_saved_usd": cost_saved_usd(scored),
+        "cost_spent_usd": cost_spent_usd(scored),
+        "latency_mean_ms": latency_mean,
+        "latency_p50_ms": latency_p50,
+        "latency_p95_ms": latency_p95,
+        "latency_p99_ms": latency_p99,
+        "throughput_qps": throughput_qps(scored),
+        "overhead_mean_ms": overhead_mean_ms(scored),
+        "peak_rss_mb": peak_rss_mb,
+        "cpu_pct": cpu_pct,
+        "git_sha": _git_sha(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def write_csv_row(row: Dict[str, Any], path: str) -> None:
+    import csv
+    import os
+
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)

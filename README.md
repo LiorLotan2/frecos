@@ -62,5 +62,36 @@ docker run frecos
 This runs `make test` inside the container.
 
 <!-- BENCHMARK:A7 -->
-Benchmark instructions land here once the harness exists (agent card A7).
+## How to benchmark
+
+`benchmarks/harness.py` replays a trace (JSONL, schema in `docs/implementation-plan.md`
+sec 2.3) through `gptcache_ext.pipeline.decide()` and produces one results-CSV row per
+run (`docs/implementation-plan.md` sec 2.4). No LLM is called: miss content and cost
+come straight from the trace, and miss latency is a seeded placeholder distribution, not
+one fit to a real trace. See the docstring at the top of `harness.py` for the full
+simulation model.
+
+The smoke benchmark (`benchmarks/smoke.py`) runs a small, fixed, deterministic 40-row
+trace through the harness with LRU eviction and the gate disabled. Reproduce the
+committed sample row with:
+
+```
+make bench-smoke
+```
+
+or directly:
+
+```
+PYTHONPATH=vendor/gptcache:. python -m benchmarks.smoke --csv /tmp/out.csv --json /tmp/out.json
+```
+
+This reproduces `benchmarks/samples/smoke_row.csv` / `smoke_row.json` exactly on every
+count and rate column (`n_queries`, `n_hits`, `hit_rate`, `stale_hit_rate`, ...). The
+latency, throughput, and resource columns are real wall-clock measurements and vary run
+to run.
+
+To benchmark your own trace and config, call `benchmarks.harness.run_harness(trace,
+config, seed, gate, eviction_policy, staleness_table)` with objects satisfying the
+`Gate`, `EvictionPolicy`, and `StalenessTable` protocols in `gptcache_ext/contracts.py`,
+then `benchmarks.harness.write_csv_row(row, path)` to append it to a results CSV.
 <!-- /BENCHMARK:A7 -->
