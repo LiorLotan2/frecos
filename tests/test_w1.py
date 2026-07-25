@@ -1,6 +1,5 @@
 """Tests for the W1 synthetic workload generator."""
 import difflib
-import json
 import math
 import subprocess
 import sys
@@ -126,7 +125,6 @@ def test_same_seed_generates_identical_rows():
 def test_cli_same_seed_byte_identical(tmp_path):
     out_a = tmp_path / "a.jsonl"
     out_b = tmp_path / "b.jsonl"
-    script = str(tmp_path.parent / "generator_invoke_marker")
     cmd_base = [
         sys.executable, "-m", "workloads.w1_synthetic.generator",
         "--n-queries", "500", "--seed", "3",
