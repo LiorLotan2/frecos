@@ -96,12 +96,30 @@ def zipf_pick(n_items, zipf_skew, rng):
     return rng.choice(n_items, p=weights)
 
 
-def draw_half_life(scale, rng, shape=1.0):
-    """Exponential when shape=1.0 (the fitter's own model, matched by construction).
-    shape=2.0 draws from a Weibull instead, same mean as the exponential with that scale,
-    so the fitter's exponential assumption is misspecified without changing the average
-    staleness rate the trace exhibits.
+MIXTURE_FAST_FRACTION_OF_MEAN = 0.2
+MIXTURE_SLOW_FRACTION_OF_MEAN = 1.8
+
+
+def draw_half_life(scale, rng, shape=1.0, mode="exponential"):
+    """Exponential (mode="exponential", the fitter's own assumed model) by default.
+
+    mode="weibull" draws from a Weibull with the given shape instead, same mean as the
+    exponential with that scale. A Weibull with shape > 1 has a *lower* coefficient of
+    variation than the exponential it replaces (shape=2 roughly halves it), so this
+    misspecification makes the workload's staleness easier to predict, not harder, even
+    though the fitter's exponential assumption is technically wrong. Kept for reference.
+
+    mode="mixture" draws from a 50/50 mixture of two exponentials, one with a fifth of
+    the mean scale and one with 1.8 times it, same overall mean as the plain exponential
+    with that scale. This is the adversarial case: a single exponential rate fit by
+    maximum likelihood is systematically biased for both the fast and the slow
+    subpopulation it is trying to average over, unlike the Weibull case above.
     """
+    if mode == "mixture":
+        fast_scale = scale * MIXTURE_FAST_FRACTION_OF_MEAN
+        slow_scale = scale * MIXTURE_SLOW_FRACTION_OF_MEAN
+        chosen_scale = fast_scale if rng.random() < 0.5 else slow_scale
+        return float(rng.exponential(scale=chosen_scale))
     if shape == 1.0:
         return float(rng.exponential(scale=scale))
     weibull_scale = scale / math.gamma(1.0 + 1.0 / shape)
@@ -149,7 +167,7 @@ def _force_staleness_boundary_crossings(rows, params, rng):
 def generate_trace(
     n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
     paraphrase_frac=0.25, longtail_frac=0.20, repeat_frac=0.20,
-    base_mean_gap_seconds=3600.0, half_life_shape=1.0,
+    base_mean_gap_seconds=3600.0, half_life_shape=1.0, half_life_mode="exponential",
 ):
     if n_clusters < 1 or n_queries < 1 or n_tenants < 1:
         raise ValueError("n_clusters, n_queries, n_tenants must be positive")
@@ -185,7 +203,7 @@ def generate_trace(
         next_answer_id += 1
         t = float(canonical_times[i])
         half_life = draw_half_life(
-            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape, mode=half_life_mode
         )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
@@ -218,7 +236,7 @@ def generate_trace(
         cluster_id = canonical["cluster_id"]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
         half_life = draw_half_life(
-            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape, mode=half_life_mode
         )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
@@ -241,7 +259,7 @@ def generate_trace(
         span = canonical_gaps.sum() * 1.3 if n_canonical else mean_gap
         t = BASE_TIME + float(rng.uniform(0, span))
         half_life = draw_half_life(
-            params["half_life_scale"][cluster_id], rng, shape=half_life_shape
+            params["half_life_scale"][cluster_id], rng, shape=half_life_shape, mode=half_life_mode
         )
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
@@ -267,7 +285,7 @@ def generate_trace(
         answer_id = canonical["answer_id"]
         half_life_scale = params["half_life_scale"][cluster_id]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
-        half_life = draw_half_life(half_life_scale, rng, shape=half_life_shape)
+        half_life = draw_half_life(half_life_scale, rng, shape=half_life_shape, mode=half_life_mode)
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
