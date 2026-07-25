@@ -3,8 +3,7 @@
 FreCoS (Freshness- and Cost-aware Serving) extends GPTCache with a learned per-cluster
 staleness model, used both as a validity gate on the serve path and as a decay term in
 eviction. It is a course project built on top of a pinned GPTCache fork; see
-`docs/frecos-design-v2.md` for the design and `docs/implementation-plan.md` for how the
-work is broken up across agent cards.
+`report/report.pdf` for the full write-up (design, experiments, results).
 
 ## Repository layout
 
@@ -13,7 +12,8 @@ work is broken up across agent cards.
 - `workloads/` - trace generators (synthetic and Wikipedia-derived).
 - `benchmarks/` - the harness, metrics, and experiment runners.
 - `tests/` - unit tests, the reference oracle, and the invariant suite.
-- `docs/` - design spec, implementation plan, and supporting write-ups.
+- `docs/` - supporting write-ups (baseline source map, Wikipedia feasibility spike).
+- `report/` - the final report (LaTeX source and compiled PDF).
 
 ## GPTCache baseline
 
@@ -64,12 +64,11 @@ This runs `make test` inside the container.
 <!-- BENCHMARK:A7 -->
 ## How to benchmark
 
-`benchmarks/harness.py` replays a trace (JSONL, schema in `docs/implementation-plan.md`
-sec 2.3) through `gptcache_ext.pipeline.decide()` and produces one results-CSV row per
-run (`docs/implementation-plan.md` sec 2.4). No LLM is called: miss content and cost
-come straight from the trace, and miss latency is a seeded placeholder distribution, not
-one fit to a real trace. See the docstring at the top of `harness.py` for the full
-simulation model.
+`benchmarks/harness.py` replays a trace (JSONL) through `gptcache_ext.pipeline.decide()`
+and produces one results-CSV row per run. No LLM is called: miss content and cost come
+straight from the trace, and miss latency is a seeded placeholder distribution, not one
+fit to a real trace. See the docstring at the top of `harness.py` for the full simulation
+model and CSV schema.
 
 The smoke benchmark (`benchmarks/smoke.py`) runs a small, fixed, deterministic 40-row
 trace through the harness with LRU eviction and the gate disabled. Reproduce the
