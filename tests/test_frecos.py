@@ -61,23 +61,9 @@ def policy():
 # --- Cold-start regression -------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "log1p(freq) is exactly 0 at freq=0, so the literal formula from the design spec "
-    "zeroes the whole product for a brand-new entry regardless of regen_cost, age, or "
-    "size_bytes. The design doc itself (frecos-design-v2.md sec 3.2) states this must not "
-    "happen, but the formula as literally specified produces it anyway. Kept as spec'd per "
-    "instructions not to silently patch; see final report for the design-tension writeup."
-))
 def test_cold_start_entry_scores_above_zero(policy):
     fresh = make_meta(freq=0.0, regen_cost=0.01, size_bytes=100, create_on=NOW - 1.0)
     assert policy.value(fresh, NOW) > 0.0
-
-
-def test_cold_start_literal_formula_actually_zero(policy):
-    """Documents the actual behavior: freq=0 gives value 0.0 exactly, confirming the
-    tension above is real and not a test-writing mistake."""
-    fresh = make_meta(freq=0.0, regen_cost=0.01, size_bytes=100, create_on=NOW - 1.0)
-    assert policy.value(fresh, NOW) == 0.0
 
 
 # --- Monotonicity -----------------------------------------------------------
