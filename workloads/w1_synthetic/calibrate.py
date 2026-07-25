@@ -19,11 +19,13 @@ import argparse
 import os
 
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
 
-from workloads.w1_synthetic.generator import generate_trace
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+
+from workloads.w1_synthetic.generator import generate_trace  # noqa: E402
 
 REGEN_COST_REFERENCE_MU = np.log(0.003)
 REGEN_COST_REFERENCE_SIGMA = 0.6
@@ -36,14 +38,22 @@ def collect_regen_costs(rows):
 
 
 def collect_half_lives(rows):
-    return np.array([row["valid_until"] - row["t"] for row in rows if row["valid_until"] < float("inf")])
+    return np.array([
+        row["valid_until"] - row["t"] for row in rows if row["valid_until"] < float("inf")
+    ])
 
 
 def plot_overlay(synthetic_values, reference_values, xlabel, title, out_path, xscale="linear"):
     fig, ax = plt.subplots(figsize=(6, 4))
     bins = 40
-    ax.hist(synthetic_values, bins=bins, density=True, alpha=0.5, label="W1 synthetic", color="tab:blue")
-    ax.hist(reference_values, bins=bins, density=True, alpha=0.5, label="literature-informed target range", color="tab:orange")
+    ax.hist(
+        synthetic_values, bins=bins, density=True, alpha=0.5,
+        label="W1 synthetic", color="tab:blue",
+    )
+    ax.hist(
+        reference_values, bins=bins, density=True, alpha=0.5,
+        label="literature-informed target range", color="tab:orange",
+    )
     ax.set_xlabel(xlabel)
     ax.set_ylabel("density")
     ax.set_title(title)
@@ -56,7 +66,9 @@ def plot_overlay(synthetic_values, reference_values, xlabel, title, out_path, xs
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Plot W1 distributions against literature-informed reference targets.")
+    parser = argparse.ArgumentParser(
+        description="Plot W1 distributions against literature-informed reference targets."
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n-queries", type=int, default=20000)
     parser.add_argument("--out-dir", default="docs/figures")
@@ -68,7 +80,9 @@ def main():
 
     regen_costs = collect_regen_costs(rows)
     rng = np.random.default_rng(args.seed + 1)
-    reference_costs = rng.lognormal(REGEN_COST_REFERENCE_MU, REGEN_COST_REFERENCE_SIGMA, size=len(regen_costs))
+    reference_costs = rng.lognormal(
+        REGEN_COST_REFERENCE_MU, REGEN_COST_REFERENCE_SIGMA, size=len(regen_costs)
+    )
     plot_overlay(
         regen_costs, reference_costs,
         xlabel="regen_cost (USD)",
@@ -87,8 +101,14 @@ def main():
         xscale="log",
     )
 
-    print(f"regen_cost: synthetic median={np.median(regen_costs):.5f} reference median={np.median(reference_costs):.5f}")
-    print(f"half_life hours: synthetic median={np.median(half_lives)/3600:.2f} reference median={np.median(reference_half_lives)/3600:.2f}")
+    print(
+        f"regen_cost: synthetic median={np.median(regen_costs):.5f} "
+        f"reference median={np.median(reference_costs):.5f}"
+    )
+    print(
+        f"half_life hours: synthetic median={np.median(half_lives)/3600:.2f} "
+        f"reference median={np.median(reference_half_lives)/3600:.2f}"
+    )
 
 
 if __name__ == "__main__":

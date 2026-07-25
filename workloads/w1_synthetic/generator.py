@@ -72,7 +72,10 @@ def paraphrase_text(canonical_text, rng):
     # the paraphrase is byte-identical to its canonical query, which defeats the point of
     # a "distinct text, same answer" stream.
     prefix_idx = rng.integers(len(PARAPHRASE_PREFIXES))
-    suffix_idx = rng.integers(1, len(PARAPHRASE_SUFFIXES)) if prefix_idx == 0 else rng.integers(len(PARAPHRASE_SUFFIXES))
+    if prefix_idx == 0:
+        suffix_idx = rng.integers(1, len(PARAPHRASE_SUFFIXES))
+    else:
+        suffix_idx = rng.integers(len(PARAPHRASE_SUFFIXES))
     prefix = PARAPHRASE_PREFIXES[prefix_idx]
     suffix = PARAPHRASE_SUFFIXES[suffix_idx]
     body = canonical_text[0].lower() + canonical_text[1:] if prefix else canonical_text
@@ -90,6 +93,16 @@ def zipf_pick(n_items, zipf_skew, rng):
     weights = ranks ** (-zipf_skew)
     weights /= weights.sum()
     return rng.choice(n_items, p=weights)
+
+
+def draw_cost_and_size(params, cluster_id, rng):
+    regen_cost = float(rng.lognormal(
+        params["regen_cost_mu"][cluster_id], params["regen_cost_sigma"][cluster_id]
+    ))
+    size_bytes = int(rng.lognormal(
+        params["size_bytes_mu"][cluster_id], params["size_bytes_sigma"][cluster_id]
+    ))
+    return regen_cost, max(size_bytes, 1)
 
 
 def _force_staleness_boundary_crossings(rows, params, rng):
@@ -115,13 +128,16 @@ def _force_staleness_boundary_crossings(rows, params, rng):
         cluster_id = earliest["cluster_id"]
         half_life_scale = params["half_life_scale"][cluster_id]
         latest = group[-1]
-        latest["t"] = earliest["valid_until"] + float(rng.exponential(scale=half_life_scale * 0.5)) + 1.0
+        gap = float(rng.exponential(scale=half_life_scale * 0.5))
+        latest["t"] = earliest["valid_until"] + gap + 1.0
         latest["valid_until"] = latest["t"] + float(rng.exponential(scale=half_life_scale))
 
 
-def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
-                    paraphrase_frac=0.25, longtail_frac=0.20, repeat_frac=0.20,
-                    base_mean_gap_seconds=3600.0):
+def generate_trace(
+    n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
+    paraphrase_frac=0.25, longtail_frac=0.20, repeat_frac=0.20,
+    base_mean_gap_seconds=3600.0,
+):
     if n_clusters < 1 or n_queries < 1 or n_tenants < 1:
         raise ValueError("n_clusters, n_queries, n_tenants must be positive")
     canonical_frac = 1.0 - paraphrase_frac - longtail_frac - repeat_frac
@@ -156,10 +172,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
         next_answer_id += 1
         t = float(canonical_times[i])
         half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
-        regen_cost = float(rng.lognormal(params["regen_cost_mu"][cluster_id],
-                                          params["regen_cost_sigma"][cluster_id]))
-        size_bytes = int(rng.lognormal(params["size_bytes_mu"][cluster_id],
-                                        params["size_bytes_sigma"][cluster_id]))
+        regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
         row = {
@@ -170,7 +183,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
             "answer_id": answer_id,
             "valid_until": t + half_life,
             "regen_cost": regen_cost,
-            "size_bytes": max(size_bytes, 1),
+            "size_bytes": size_bytes,
             "paraphrase_of": None,
             "split": None,
         }
@@ -190,10 +203,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
         cluster_id = canonical["cluster_id"]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
         half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
-        regen_cost = float(rng.lognormal(params["regen_cost_mu"][cluster_id],
-                                          params["regen_cost_sigma"][cluster_id]))
-        size_bytes = int(rng.lognormal(params["size_bytes_mu"][cluster_id],
-                                        params["size_bytes_sigma"][cluster_id]))
+        regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
         rows.append({
@@ -204,19 +214,17 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
             "answer_id": canonical["answer_id"],
             "valid_until": t + half_life,
             "regen_cost": regen_cost,
-            "size_bytes": max(size_bytes, 1),
+            "size_bytes": size_bytes,
             "paraphrase_of": canonical["query_id"],
             "split": None,
         })
 
     for i in range(n_longtail):
         cluster_id = nonempty_clusters[rng.integers(len(nonempty_clusters))]
-        t = BASE_TIME + float(rng.uniform(0, canonical_gaps.sum() * 1.3 if n_canonical else mean_gap))
+        span = canonical_gaps.sum() * 1.3 if n_canonical else mean_gap
+        t = BASE_TIME + float(rng.uniform(0, span))
         half_life = float(rng.exponential(scale=params["half_life_scale"][cluster_id]))
-        regen_cost = float(rng.lognormal(params["regen_cost_mu"][cluster_id],
-                                          params["regen_cost_sigma"][cluster_id]))
-        size_bytes = int(rng.lognormal(params["size_bytes_mu"][cluster_id],
-                                        params["size_bytes_sigma"][cluster_id]))
+        regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
         answer_id = next_answer_id
@@ -229,7 +237,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
             "answer_id": answer_id,
             "valid_until": t + half_life,
             "regen_cost": regen_cost,
-            "size_bytes": max(size_bytes, 1),
+            "size_bytes": size_bytes,
             "paraphrase_of": None,
             "split": None,
         })
@@ -241,10 +249,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
         half_life_scale = params["half_life_scale"][cluster_id]
         t = canonical["t"] + float(rng.exponential(scale=mean_gap))
         half_life = float(rng.exponential(scale=half_life_scale))
-        regen_cost = float(rng.lognormal(params["regen_cost_mu"][cluster_id],
-                                          params["regen_cost_sigma"][cluster_id]))
-        size_bytes = int(rng.lognormal(params["size_bytes_mu"][cluster_id],
-                                        params["size_bytes_sigma"][cluster_id]))
+        regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
         rows.append({
@@ -255,7 +260,7 @@ def generate_trace(n_tenants, n_clusters, n_queries, seed, zipf_skew=1.3,
             "answer_id": answer_id,
             "valid_until": t + half_life,
             "regen_cost": regen_cost,
-            "size_bytes": max(size_bytes, 1),
+            "size_bytes": size_bytes,
             "paraphrase_of": None,
             "split": None,
         })
