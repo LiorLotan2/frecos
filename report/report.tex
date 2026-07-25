@@ -41,19 +41,20 @@ Ben-Gurion University of the Negev}
 \maketitle
 
 \begin{abstract}
-Semantic caches are evaluated on hit rate, latency, and at best false-hit rate, none of
-which distinguishes a correct hit from a stale one. We name and measure that gap directly:
+Semantic caches are evaluated on hit rate, latency, and at best false-hit rate. None of
+these distinguishes a correct hit from a stale one. I name and measure that gap directly:
 \emph{stale-hit-rate}, the fraction of served cache hits whose content was no longer valid
-at serve time. We extend GPTCache, a frozen and widely used open-source semantic cache,
-with a per-cluster staleness model that is fit from observed data and consumed in two
-places: a validity gate on the serve path, and a soft decay term in eviction. Across a
-bracketing experiment, a six-row ablation, and three parameter sweeps, all run with ten
-seeds per configuration on a deterministic synthetic workload, we find that the validity
-gate cuts stale-hit-rate by roughly fifteen times relative to a frequency-based floor, that
-the learned decay rate reliably outperforms a single pooled rate and tracks an oracle rate
-closely, and that this correctness gain comes at a bounded and quantified cost in hit rate.
-We report the size of that trade-off directly rather than presenting the extension as a
-uniform win.
+at serve time. I extend GPTCache, a frozen and widely used open-source semantic cache,
+with a per-cluster staleness model fit from observed data and consumed in two places: a
+validity gate on the serve path, and a soft decay term in eviction. Across a bracketing
+experiment, a six-row ablation, three parameter sweeps, and a model-misspecification check,
+all run with ten seeds per configuration, the gate cuts stale-hit-rate roughly fifteenfold
+against a frequency-based floor while removing only about 1.4\% of useful hits; a
+per-cluster learned decay rate beats a single pooled rate by a wide, significant margin and
+degrades gracefully when its own exponential assumption is wrong. I report the size of the
+hit-rate trade-off directly, at the level of individual queries rather than only hit-rate
+percentages, and I report which of the two mechanisms, the gate or the eviction term, is
+doing the work.
 \end{abstract}
 
 \section{Introduction}
@@ -61,143 +62,145 @@ uniform win.
 \subsection{Motivation}
 
 A semantic cache sits in front of an expensive backend, usually a large language model
-call, and serves a stored response when an incoming query is close enough in embedding
+call. It serves a stored response when an incoming query is close enough in embedding
 space to one it has already answered. The promise is simple: skip the call, return the
-same answer faster and for free. The problem is that ``the same answer'' is a claim about
-time as well as similarity, and most semantic caches never check the time part.
+same answer faster and for free. But ``the same answer'' is a claim about time as well as
+similarity, and most semantic caches never check the time part.
 
-This gap sits at the center of a growing class of production systems that place a large
-language model between a user and an answer about frequently changing content. Consider a
-system whose job is to monitor how a brand is represented when people ask AI assistants
-about it, across many brands, geographies, and models --- the kind of workload behind
-answer engine optimization (AEO), a discipline that exists specifically because brand
-visibility inside AI-generated answers, rather than a ranked list of links, is now a
-measurable and contested surface. The set of distinct questions such a system fields is
-highly repetitive, the same style of question asked over and over as users onboard or
-monitoring jobs re-run on a schedule, which is exactly the shape of workload a semantic
-cache absorbs, and absorbing it cheaply matters since every answered query carries a real
-dollar cost that scales with the number of brands and questions tracked.
+The gap matters most in systems that place a language model between a user and an answer
+about content that changes on its own schedule, such as monitoring how a brand is
+represented across AI-generated answers (the workload behind answer engine optimization, or
+AEO). These systems ask the same style of question repeatedly, exactly the shape of
+workload a semantic cache absorbs, but the facts being asked about do not sit still: a
+product goes out of stock, a price changes, a review's sentiment shifts. A cache that asks
+only ``have I seen a similar question before'' and never ``is that answer still true'' will
+serve a stale answer indefinitely once written. The system on top of it cannot tell a
+correct hit from a wrong one, because the metric that would, stale-hit-rate, does not exist
+in standard cache evaluation.
 
-The underlying facts these questions are about do not sit still: a product goes out of
-stock, a price changes, a review's sentiment shifts, and the correct answer to an
-unchanged question changes with it. A cache that only asks ``have I seen a similar enough
-question before'' and never asks ``is that answer still true'' will keep serving a stale
-answer indefinitely once written, and the system on top of it has no way to distinguish a
-correct hit from an incorrect one, because the metric that would, stale-hit-rate, does not
-exist in any standard cache evaluation. Answer-facing systems built on language models need
-a caching layer that treats correctness over time as a first-class property, not an
-afterthought bolted onto count-based eviction.
-
-Two concrete gaps follow, and motivate the two components this project adds.
+Two concrete gaps follow, and motivate the two components I add.
 
 \textbf{No staleness concept in the serve path.} A cached answer about a fact that changes
-on its own schedule is served indefinitely once written; ``found in cache'' is silently
-treated as ``correct,'' with no mechanism to ever reconsider that judgment.
+on its own schedule is served indefinitely once written. ``Found in cache'' is silently
+treated as ``correct,'' with no mechanism to reconsider that judgment.
 
 \textbf{No cost term in eviction.} Count-based policies such as LRU and LFU treat two
 entries with identical access patterns identically, even when one is far more expensive to
-regenerate. A policy blind to regeneration cost will evict a rarely accessed but expensive
-entry ahead of a cheap one accessed once more recently, the wrong trade from a
-cost-minimization standpoint.
+regenerate. A policy blind to regeneration cost evicts a rarely accessed but expensive
+entry ahead of a cheap one accessed once more recently.
 
 Industry and research reflect this gap unevenly. Frontier model providers do exact-prefix
-key-value caching with a wall-clock time-to-live and no similarity matching, sidestepping
-the freshness question by making every key an exact match. Semantic-caching products use a
-single fixed global similarity threshold with plain time-to-live or count-based eviction,
-with no notion of per-topic staleness. The research literature, discussed next, is further
-ahead, having proposed cost-aware and even staleness-aware eviction formulas, but none of
-it names or measures stale-hit-rate as an evaluation metric in its own right. This project
-positions itself against that literature, not the weaker product baseline.
+key-value caching with a wall-clock time-to-live and no similarity matching. Semantic-caching
+products use a single fixed global similarity threshold with plain time-to-live or
+count-based eviction. Neither has a notion of per-topic staleness. The research literature
+is further ahead, proposing cost-aware and staleness-aware eviction formulas, but none of it
+names or measures stale-hit-rate as an evaluation metric. I compare against that literature,
+not the weaker product baseline.
+
+This report makes four contributions: (1) stale-hit-rate as a named, measured evaluation
+metric; (2) a per-cluster staleness model, fit from data, consumed as both a serving-time
+validity gate and an eviction-time decay term; (3) an ablation that isolates which of the
+two consumers does the correctness work; and (4) a misspecification check that tests
+whether the staleness model's own assumption, that content validity decays exponentially,
+matters to the result. Section~2 justifies the baseline, Section~3 describes the design,
+Section~4 the workload and harness, and Section~5 reports five experiments.
 
 \subsection{Related work}
 
-The closest prior art, and this project's primary eviction comparator, is Biton and
-Friedman's work on semantic-cache eviction[1], which proves optimal offline semantic-cache
-eviction is NP-hard, supplies polynomial-time heuristics, and presents online policies
-combining recency, frequency, and locality. It evaluates these on GPTCache and releases its
-implementation, part of why GPTCache was chosen as this project's baseline. Two of its
-findings shape this project's design directly: LRU is a weak policy on semantic workloads
-and frequency-based policies are a much stronger baseline, which is why every comparison
-here treats an LFU-class policy, not LRU, as the floor. The delta against FreCoS: their
-policies combine access-pattern signals only, while this project adds two signals
-orthogonal to access pattern, regeneration cost and content validity over time, and
-evaluates against a correctness metric, stale-hit-rate, their setting does not define.
+The closest prior art, and my primary eviction comparator, is Biton and Friedman's work on
+semantic-cache eviction~[1]. It proves optimal offline semantic-cache eviction is NP-hard,
+supplies polynomial-time heuristics, and presents online policies combining recency,
+frequency, and locality. It evaluates these on GPTCache and releases its implementation,
+part of why I chose GPTCache as the baseline here. Two of its findings shape my design
+directly: LRU is a weak policy on semantic workloads, and frequency-based policies are a
+much stronger baseline. That is why every comparison here treats an LFU-class policy, not
+LRU, as the floor. The delta against FreCoS (\textbf{Fre}shness- and \textbf{Co}st-aware
+\textbf{S}erving, this project's name): their policies combine access-pattern signals only,
+while FreCoS adds two signals orthogonal to access pattern, regeneration cost and content
+validity over time, and evaluates against a correctness metric, stale-hit-rate, their
+setting does not define.
 
-The structurally closest published eviction formula is Cortex's LCFU policy[2], whose
+The structurally closest published eviction formula is Cortex's LCFU policy~[2], whose
 earlier preprint circulated under the name Asteria and is cited here by its current title.
 LCFU scores an entry as a product of log-scaled frequency, cost, latency, and a staleness
 term, divided by size, with a time-to-live purge. The delta is narrow: Cortex's staleness
 term is a static ``staticity'' score assigned by a language model at write time, while
 FreCoS's is a decay rate learned per cluster from observed staleness. The distinction is
-learned against assigned, and the bracketing experiment in
-Section~\ref{sec:brackets} tests whether that learning does measurable work. Cortex's
-formula was not reimplemented, since it incorporates remote-tool-call latency metadata with
-no equivalent here.
+learned against assigned, and the bracketing experiment in Section~\ref{sec:brackets} tests
+whether that learning does measurable work. I did not reimplement Cortex's formula, since it
+incorporates remote-tool-call latency metadata with no equivalent here.
 
 Several other lines of work bear on individual pieces of the design without matching its
-combination. GDSF[3] scores entries as cost times frequency divided by size with a
+combination. GDSF~[3] scores entries as cost times frequency divided by size with a
 global-clock aging term, but that term ages access recency, not content validity, so it has
-no freshness semantics. Category-Aware caching[4] assigns per-category time-to-live values
-that are load-based rather than learned, and defines no stale-hit-rate equivalent; it is
-also why a third, originally planned component of this project, calibrated per-cluster
-similarity thresholds, was cut, since it would have been a lossy special case of both this
-work and per-embedding threshold learning. FreshCache[5] shares this project's lineage of
-putting staleness in the serve path, but as a probabilistic risk budget per tier rather
-than a hard gate, and is listed as future work as an alternative framing. SCALM[6] clusters
-cache entries similarly to this project's k-means step, but its significance score is not
-staleness-aware. MeanCache[7] is cost-motivated but does not target eviction. W-TinyLFU[8]
-is an admission-control policy, deciding whether an entry is worth admitting before
-eviction is invoked, and is out of scope since it would add an orthogonal axis rather than
-test either of this project's contributions.
+no freshness semantics. Category-Aware caching~[4] assigns per-category time-to-live values
+that are load-based rather than learned, and defines no stale-hit-rate equivalent. It is
+also why I cut a third, originally planned component, calibrated per-cluster similarity
+thresholds: it would have been a lossy special case of both this work and per-embedding
+threshold learning. FreshCache~[5] shares FreCoS's lineage of putting staleness in the
+serve path, but as a probabilistic risk budget per tier rather than a hard gate; I list it
+as future work as an alternative framing. SCALM~[6] clusters cache entries similarly to my
+k-means step, but its significance score is not staleness-aware. MeanCache~[7] is
+cost-motivated but does not target eviction. W-TinyLFU~[8] is an admission-control policy,
+deciding whether an entry is worth admitting before eviction is invoked; it is out of
+scope here since it would add an orthogonal axis rather than test either of my
+contributions.
 
-The alternative baseline vCache[9] was considered and rejected: its contribution is
+I considered and rejected the alternative baseline vCache~[9]. Its contribution is
 per-prompt threshold learning, replacing a single global threshold with one learned per
-embedding, and eviction is explicitly not its focus. Building this project's staleness and
-cost work on top of it would layer a new contribution on a system whose own novelty sits
+embedding, and eviction is explicitly not its focus. Building this staleness and cost work
+on top of vCache would layer a new contribution on a system whose own novelty sits
 elsewhere, diluting rather than sharpening the comparison.
 
 \section{Baseline}
 
 \subsection{Why GPTCache}
 
-This project extends GPTCache[10] rather than a more actively maintained semantic cache,
-and the case rests on architecture and control properties rather than community activity.
-GPTCache's most recent release is v0.1.44 (August 2024); it carries dozens of open issues
-and pull requests, and the maintainers state that support for new integrations has
-stopped. Ordinarily this counts against a dependency; here it is an advantage, since a
-frozen interface is a better scientific control than a moving one --- the baseline
-measured early in this project is byte-identical to the one measured at the end, and every
-delta reported below is attributable to the extension, not an upstream change mid-project.
+I extend GPTCache~[10] rather than a more actively maintained semantic cache. The case rests
+on architecture and control properties, not community activity. GPTCache's most recent
+release is v0.1.44 (August 2024); it carries dozens of open issues and pull requests, and
+the maintainers state that support for new integrations has stopped. Ordinarily this counts
+against a dependency. Here it is an advantage: a frozen interface is a better scientific
+control than a moving one. The baseline I measured early in this project is byte-identical
+to the one I measured at the end, so every delta reported below is attributable to the
+extension, not an upstream change mid-project.
 
-The second reason is architectural fit, verified by reading the vendored source directly.
-Every component this project modifies, the similarity threshold check, the hit and miss
-decision, and the eviction registry, sits behind a registered, named interface, so the
-extension is additive configuration: a new eviction subclass registered through the
-existing hook, a metadata field added via composition around storage, and a serving-path
-gate plugged into one shared decision helper. Nothing vendored is edited. Every claim about
-GPTCache's internal behavior quoted here was re-verified against the exact pinned commit
-vendored in this project's repository, with file and line recorded.
+The second reason is architectural fit, which I verified by reading the vendored source
+directly rather than assuming it from documentation. Every component I modify, the
+similarity threshold check, the hit and miss decision, and the eviction registry, sits
+behind a registered, named interface. My extension is additive configuration: a new
+eviction subclass registered through the existing hook, a metadata field added via
+composition around storage, and a serving-path gate plugged into one shared decision
+helper. I never edit vendored code. Every claim about GPTCache's internal behavior quoted
+here was re-verified against the exact pinned commit vendored in this project's repository,
+with file and line recorded.
 
-Third, GPTCache is the baseline the closest prior art already uses, making Biton and
-Friedman's released policy usable directly as this project's primary comparator rather
-than requiring reimplementation. Fourth, its default embedding backend runs on the CPU
-deterministically, keeping every benchmark run reproducible without a GPU dependency or
-nondeterminism from a hosted embedding service.
+Third, GPTCache is the baseline the closest prior art already uses. In principle this makes
+Biton and Friedman's released policy usable directly as my primary comparator; in practice
+I substituted a documented proxy instead, for reasons stated in Section~\ref{sec:ablation}.
+Fourth, its default embedding backend runs on the CPU deterministically, keeping every
+benchmark run reproducible without a GPU dependency or nondeterminism from a hosted
+embedding service.
+
+One consequence of choosing a frozen, unmaintained baseline is worth stating openly: the
+guidelines for this course offer a grade bonus for an upstream contribution adopted by
+maintainers, and GPTCache's own README states that new contributions are not being merged.
+I made that trade deliberately, for the reproducibility argument above, and forgo the bonus
+rather than leave it unaddressed.
 
 \subsection{GPTCache's behavior and default eviction policy}
 
 GPTCache serves a cached response when an incoming query is semantically close enough to a
 previously seen one, using a single global cosine similarity threshold, 0.8 by default,
 rather than exact-match keys. Its eviction policies are purely count-based:
-least-recently-used, least-frequently-used, first-in-first-out, or random replacement.
-None reads generation time, access recency, or regeneration cost beyond the single counter
-each already tracks, and none retains metadata on an evicted entry; the eviction cache
-stores only a boolean flag per key. Creation and last-access timestamps are persisted per
-entry but never read by any decision logic, existing as columns with no downstream
-consumer, precisely the gap this project's extension repurposes. There is no admission
-control, every miss is written back unconditionally, and no cost accounting, false-hit
-tracking, or staleness tracking exists anywhere in the built-in reporting layer, which
-counts only per-stage operation timers.
+least-recently-used, least-frequently-used, first-in-first-out, or random replacement. None
+reads generation time, access recency, or regeneration cost beyond the single counter each
+already tracks. None retains metadata on an evicted entry; the eviction cache stores only a
+boolean flag per key. Creation and last-access timestamps are persisted per entry but never
+read by any decision logic. They exist as columns with no downstream consumer, precisely
+the gap my extension repurposes. There is no admission control; every miss is written back
+unconditionally. No cost accounting, false-hit tracking, or staleness tracking exists
+anywhere in the built-in reporting layer, which counts only per-stage operation timers.
 
 \section{Design}
 
@@ -211,17 +214,24 @@ whose content was already invalid when served.
 
 Cluster assignment is a fixed, seeded k-means clustering over cached-query embeddings, run
 once at cache-build time, with no online re-clustering, a deliberate reproducibility
-choice. Cluster identity, once assigned, is consumed by both the gate and the eviction
-policy and never recomputed independently by either, which matters because a gate and an
-eviction policy that disagree about an entry's cluster is one of the most likely
-integration failures in a system with this shape.
+choice. I compute these embeddings because the staleness model needs cluster identity;
+Section~\ref{ssec:simmodel} explains why the benchmark harness used to evaluate the model
+does not also use them for cache lookup. Cluster identity, once assigned, is consumed by
+both the gate and the eviction policy and never recomputed independently by either. A gate
+and an eviction policy that disagree about an entry's cluster is one of the most likely
+integration failures in a system with this shape, so I checked for it directly in the
+ablation (Section~\ref{sec:ablation}).
 
-For each cluster, a decay rate is fit from observed staleness in a held-out calibration
-split, and a time-to-live is derived at a configured confidence level. Three
-interchangeable modes produce this table with the same output shape: \emph{learned} fits
-each cluster's rate independently, falling back to a pooled rate below thirty
-observations; \emph{global} pools every cluster into one shared rate; \emph{oracle} takes
-the rate from ground truth, an upper bound never available in a real deployment.
+For each cluster, a decay rate $\lambda_c$ is fit from observed staleness in a held-out
+calibration split, assuming validity decays exponentially: $\Pr[\text{still valid after }
+\Delta t] = e^{-\lambda_c \Delta t}$. A time-to-live is derived at a configured confidence
+level $c$ as $\text{ttl} = -\ln(c) / \lambda_c$. Three interchangeable modes produce this
+table with the same output shape: \emph{learned} fits each cluster's rate independently by
+maximum likelihood, falling back to a rate pooled across all clusters below thirty
+observations; \emph{global} pools every cluster into one shared rate regardless of sample
+size; \emph{oracle} takes the rate from the workload generator's ground truth, an upper
+bound never available in a real deployment. Table~\ref{tab:params} lists every tunable
+parameter, its default, and where its effect is measured.
 
 The validity gate is the first consumer. On a candidate hit, if the entry's age exceeds
 its cluster's time-to-live, it is treated as a miss, the answer is regenerated, and the
@@ -237,58 +247,74 @@ The eviction value function is the second consumer:
 \label{eq:value}
 \end{equation}
 
-where $\text{age}$ is measured from creation time, never last access; $\kappa$ log-compresses
-regeneration cost so a heavy-tailed cost distribution cannot dominate the other terms; and
-the victim is the entry with the lowest value, ties broken by oldest creation time then
-lowest entry identifier.
+where $\text{age}$ is measured from creation time, never last access; $\kappa = 1000$
+log-compresses regeneration cost (typically a few tenths of a US cent) so its heavy-tailed
+distribution cannot dominate the other terms; and the victim is the entry with the lowest
+value, ties broken by oldest creation time then lowest entry identifier.
 
-One detail reflects a real design tension rather than a footnote. The original frequency
+One detail reflects a real design tension I ran into, not a footnote. My original frequency
 term was $\log(1+\text{freq})$, exactly zero for a never-accessed entry. Since the value
 function is a product of four terms, a zero frequency term zeroes the entire score
-regardless of cost, freshness, or size, meaning a freshly written entry would always be
-evicted next. A cold-start regression test caught this, and the fix, $\log(2+\text{freq})$
-in Equation~\ref{eq:value}, preserves the same concave shape while guaranteeing a strictly
-positive score at zero frequency. It was applied throughout every experiment in this
-report; disclosing it here is more convincing than hiding it.
+regardless of cost, freshness, or size: a freshly written entry would always be evicted
+next. A cold-start regression test I wrote specifically to check this caught it, and I
+fixed it by changing the term to $\log(2+\text{freq})$ in Equation~\ref{eq:value}, which
+preserves the same concave shape while guaranteeing a strictly positive score at zero
+frequency. I applied the fix throughout every experiment in this report.
 
 Because the gate already refreshes anything past its time-to-live, the decay term inside
-the value function is not itself performing staleness prevention; it acts as a soft prior
+the value function is not itself performing staleness prevention. It acts as a soft prior
 favoring entries with more remaining useful life among candidates the gate already judged
 fresh. This is the intended division of labor, and the ablation in
 Section~\ref{sec:ablation} tests it directly.
 
 Eviction remains entry-count budgeted, matching GPTCache's convention. Entry size in bytes
-is recorded and used only inside the value function's denominator; no separate byte-budget
-eviction loop was built.
-
-\subsection{Cut scope}
+is recorded and used only inside the value function's denominator; I did not build a
+separate byte-budget eviction loop.
 
 An earlier design included a third component, calibrated per-cluster similarity
-thresholds, cut before implementation began. It turns out to be a lossy special case of
-two things already in the literature, vCache's per-embedding threshold learning and
-Category-Aware caching's per-category treatment, so building a third, weaker version
-exceeded what it would have contributed. It is listed as future work.
+thresholds, which I cut before implementation began. It turns out to be a lossy special
+case of two things already in the literature, vCache's per-embedding threshold learning
+and Category-Aware caching's per-category treatment, so building a third, weaker version
+would have cost more than it contributed. It remains future work.
+
+\begin{table}[htbp]
+\centering
+\caption{Every tunable parameter in the extension, its default, and where its effect on
+stale-hit-rate or hit rate is measured in Section~5.}
+\label{tab:params}
+\begin{tabular}{llll}
+\toprule
+Parameter & Default & Swept & Measured in \\
+\midrule
+lambda source (mode) & learned & global, learned, oracle & \ref{sec:brackets} \\
+TTL confidence $c$ & 0.90 & 0.80, 0.90, 0.95, 0.99 & \ref{ssec:sweeps} \\
+cluster count $K$ & 10 & 5, 10, 20, 50 & \ref{ssec:sweeps} \\
+cache size (entries) & 1650--1980 & 5\%--80\% of working set & \ref{ssec:sweeps} \\
+$\kappa$ (cost log-compression) & 1000 & not swept & --- \\
+calibration fallback threshold & 30 obs.\ & not swept & --- \\
+eviction size term & on & on / off & \ref{sec:ablation} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+$\kappa$ and the thirty-observation fallback threshold were fixed at values that seemed
+reasonable at design time and were not independently swept; I flag this rather than imply
+a sensitivity analysis exists where none does.
 
 \section{Experimental setup}
 
 \subsection{Workload}
 
-All experiments run on W1, a deterministic, seeded synthetic workload generator built for
-this project. A second workload, derived from Wikipedia revision history with staleness
-ground truth from edit timestamps, was investigated in a timeboxed feasibility spike
-before other implementation work began. That spike sampled thirty question-answer pairs
-from SQuAD~2.0[11], pulled each answer's revision history from the Wikipedia API, and
-applied an automatic invalidation rule comparing each revision's answer sentence to the
-one before it. Twenty cases were hand-labeled and compared against the rule's output;
-agreement was 40 percent, well short of the 80 percent threshold this project's plan
-required before building a full loader. All twelve disagreements traced to one failure
-mode: the rule flagged a sentence as changed when a copyedit or unrelated inserted
-sentence altered the surrounding text without touching the fact asked about. A reliable
-rule would need a proper wikitext renderer and paragraph-level alignment, estimated at
-eighteen to twenty-three additional hours the schedule did not allot. The decision to
-proceed with W1 alone, made once and not revisited, is disclosed as a limitation on
-external validity: every staleness result here comes from a self-generated workload, not
-an independently sourced ground truth.
+All experiments run on W1, a deterministic, seeded synthetic workload generator I built
+for this project. I investigated a second workload, derived from Wikipedia revision history
+with staleness ground truth from edit timestamps, in a timeboxed feasibility spike before
+other implementation work began. It sampled thirty question-answer pairs from
+SQuAD~2.0~[11] and compared an automatic sentence-change rule against twenty hand-labeled
+revision pairs; the rule agreed with my labels only 40\% of the time, short of the 80\%
+threshold I had set as a go/no-go bar, and reaching a reliable rule was estimated at
+eighteen to twenty-three more hours I did not have. I proceeded with W1 alone and did not
+revisit that call. The full spike, including the failure mode behind the disagreements, is
+in \texttt{docs/w2-feasibility.md}. Section~\ref{sec:discussion} discusses what this limits.
 
 W1 generates queries across several streams inside each topic cluster: canonical queries
 establishing a ground-truth answer, near-duplicate paraphrases sharing that answer's
@@ -300,36 +326,48 @@ otherwise the validity gate would have nothing to reject. Each trace is split by
 time into the first thirty percent for calibration and the remaining seventy percent for
 evaluation; no parameter is fit on data it is later scored against.
 
+The default generator draws half-life from an exponential distribution, matching the
+staleness fitter's own assumption exactly. Section~\ref{ssec:misspec} reruns the bracketing
+experiment with half-life drawn from a Weibull distribution instead, same mean, different
+shape, to test what happens when that assumption is wrong.
+
 The generator's two ground-truth distributions, regeneration cost and content half-life,
 were meant to be calibrated against the Azure LLM Inference Trace and observed
-update-frequency in a public corpus. Neither was reachable from the development
-environment, so both distributions are instead parameterized from commonly cited public
-figures and compared against those figures as a plausibility check, documented as such
-rather than presented as a real external fit --- a second explicit limit on external
-validity.
+update-frequency in a public corpus. Neither was reachable from my development
+environment, so I instead parameterized both from commonly cited public figures as a
+plausibility check, not a real external fit, a second limit on external validity.
 
 \subsection{Simulation model}
+\label{ssec:simmodel}
 
 The benchmark harness every experiment runs through is a pure trace replayer; no language
 model is ever called. On a miss, response content is whatever answer identity the trace
 recorded, cost charged is the trace's recorded regeneration cost, and miss latency is
 simulated from a seeded log-normal distribution scaled by entry size, deterministic per
-query so replay order never affects the result. This distribution is a documented
-placeholder, not fit to a real inference trace. Hit latency and the extension's own
-overhead, cluster lookup plus gate check, are measured for real with wall-clock timing, not
-simulated. Reported latency is therefore a hybrid of real cache-side measurement and
-simulated backend cost, the right trade for making every run free and deterministic, but a
-validity limitation worth stating plainly.
+query. This distribution is a documented placeholder, not fit to a real inference trace.
+Hit latency and the extension's own overhead, cluster lookup plus gate check, are measured
+for real with wall-clock timing: median overhead is 0.57 microseconds per decision at the
+LFU floor and 0.69 microseconds at the full stack (Table~\ref{tab:latency}), what the gate
+and cluster lookup add on top of GPTCache's own decision path. Reported latency in every
+table is therefore a hybrid of real cache-side measurement and simulated backend cost, the
+right trade for keeping every run free and deterministic, but a limitation worth stating.
 
-A further limitation shapes every absolute number below: the harness's index is an
-exact-text-match lookup, with no embedding-based semantic index yet wired in. Paraphrase
-queries, one of W1's four stream types, never register as hits; only literal repeats do.
-Hit counts across every experiment are in the low hundreds out of thousands of scored
-queries, widening every confidence interval. This caps absolute hit rate well below what a
-real semantic index would produce, but applies identically across every condition, so it
-does not favor one policy or lambda source over another; the relative comparisons this
-report's claims rest on are unaffected, even though absolute numbers are not representative
-of a production cache.
+A further limitation shapes every absolute number below: the harness's lookup index is
+exact-text-match; I compute embeddings for clustering (Section~3.1) but not for retrieval,
+so no semantic index is wired in yet. Paraphrase queries, one of W1's four stream types,
+never register as hits; only literal repeats do. Hit counts across every experiment are in
+the low hundreds out of thousands of scored queries (exact per-seed counts appear beside
+every rate in Section~5), which widens every confidence interval and also means
+false-hit-rate is structurally near zero throughout, since exact matching essentially
+always retrieves the entry written for that exact string; I report it for completeness
+but it carries no signal under this harness.
+
+The invariance I rely on for every relative comparison, that this limitation does not
+favor one policy or lambda source over another, holds within each comparison because the
+index is held fixed across every condition inside it. It would not necessarily survive a
+swap to a semantic index: a paraphrase match would inherit an older entry's age rather than
+a freshly-written one's, changing the age distribution the gate sees, and I have not
+verified that the gate's or eviction policy's relative ranking survives that change.
 
 The cache starts empty in every run. The first ten percent of the evaluation split warms
 the cache and is excluded from every metric; only the remaining ninety percent is scored.
@@ -338,30 +376,38 @@ the cache and is excluded from every metric; only the remaining ninety percent i
 
 Stale-hit-rate is the fraction of served hits where serve time exceeds the entry's true
 expiry; false-hit-rate is the fraction where the served answer's identity does not match
-the query's true answer identity. Cost saved sums regeneration cost over non-stale hits
-only, since a stale hit served a wrong answer and saved nothing. Every configuration was
-run with ten independent seeds, each its own freshly generated trace rather than one trace
-replayed ten times, since the pipeline has no randomness once a trace is fixed. Results are
-medians with 95 percent confidence intervals from a percentile bootstrap over the ten
-per-seed values, ten thousand resamples, fixed resampling seed for exact reproducibility.
-Group comparisons use the Mann-Whitney U test; ``significant'' is used only where that test
-was run.
+the query's true identity; useful-hit-rate is the fraction of \emph{all scored queries}
+(not just hits) served a correct, non-stale answer. Cost saved sums regeneration cost over
+non-stale hits only, since a stale hit served a wrong answer and saved nothing. Every
+configuration ran ten independent seeds, each its own freshly generated trace, since the
+pipeline has no randomness once a trace is fixed. Results are medians with 95\% confidence
+intervals from a percentile bootstrap over the ten per-seed values (10,000 resamples, fixed
+resampling seed). With only ten seeds a bootstrap CI is coarser than it looks, so I report
+raw hit and stale-hit counts alongside every rate. Group comparisons use the Mann-Whitney U
+test with the rank-biserial correlation as an effect size, since at $n=10$ the smallest
+achievable two-sided $p$-value is about 0.0002 and $p$ alone does not distinguish a large
+effect from a small one at that floor. I ran roughly fifteen such tests without correcting
+for multiple comparisons; treat borderline $p$-values with that in mind. A non-significant
+result is reported as an absence of detected difference at $n=10$, not as equivalence;
+where I claim two conditions behave alike, I show matching raw counts, not only a large
+$p$-value.
 
 \section{Results}
 
 \subsection{Bracketing: does learned staleness beat naive pooling}
 \label{sec:brackets}
 
-The first and most consequential experiment tests the core claim behind fitting a
-staleness rate per cluster at all: does it do work relative to the two obvious
-alternatives, a rate pooled across every cluster, and the true rate a real system could
-never observe. Three lambda sources, global, learned, and oracle, were each run for ten
-seeds on the same twelve-thousand-query W1 configuration, gate enabled, FreCoS eviction
-active throughout.
+This experiment tests the core claim behind fitting a staleness rate per cluster at all:
+does it do work relative to two obvious alternatives, a rate pooled across every cluster,
+and the true rate a real system could never observe. I ran three lambda sources, global,
+learned, and oracle, for 10 seeds each on the same 12,000-query W1 configuration, gate
+enabled, FreCoS eviction active throughout.
 
 \begin{table}[htbp]
 \centering
-\caption{Bracketing experiment: median stale-hit-rate by lambda source, 10 seeds each, with 95\% bootstrap confidence intervals.}
+\caption{Per-cluster fitting cuts stale-hit-rate 4x relative to a pooled rate and is
+indistinguishable from an oracle rate the system could never actually observe. Median hit
+count per run was 130--143 (Table~\ref{tab:brackets-counts}).}
 \label{tab:brackets}
 \begin{tabular}{lccc}
 \toprule
@@ -374,105 +420,209 @@ Oracle & 0.035 & (0.028, 0.064) & 0.449 \\
 \end{tabular}
 \end{table}
 
-Learned separates cleanly from global. Table~\ref{tab:brackets} shows a median
-stale-hit-rate of 0.035 under learned against 0.144 under global; the confidence intervals
-do not overlap, Mann-Whitney $p \approx 0.0005$. Pooling every cluster's observations into
-one rate is measurably and significantly worse than fitting each cluster's own.
+\begin{table}[htbp]
+\centering
+\caption{Raw counts behind Table~\ref{tab:brackets}: median served hits and stale hits
+served, out of a median 7560 scored queries per run.}
+\label{tab:brackets-counts}
+\begin{tabular}{lcc}
+\toprule
+Lambda source & Median n\_hits & Median n\_stale\_hits\_served \\
+\midrule
+Global & 143 & 21 \\
+Learned & 130 & 4.5 \\
+Oracle & 130.5 & 4.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Where this departs from what the design anticipated is the relationship between learned
-and oracle: the two are statistically indistinguishable, learned's median equals oracle's
-exactly, eight of ten seed pairs are byte-identical, $p \approx 0.94$. Learned does not sit
-at a visible midpoint between floor and ceiling; it sits at the ceiling. At roughly
-five hundred fifty to six hundred fifty calibration observations per cluster here, well
-above the thirty-observation fallback, the per-cluster maximum-likelihood fit essentially
-recovers the true rate, leaving no daylight for learned and oracle to differ on.
+Learned separates cleanly from global: median stale-hit-rate 0.035 under learned against
+0.144 under global, confidence intervals not overlapping, Mann-Whitney $U = 4.0$,
+$p \approx 0.0005$, rank-biserial $r = 0.92$, a large effect. Pooling every cluster's
+observations into one rate is significantly worse than fitting each cluster's own.
 
-A follow-up tested whether that gap opens at a substantially smaller calibration sample, a
-trace roughly seven times smaller, dropping observations per cluster to the thirty-to-seventy
-range. It does not: learned remains indistinguishable from oracle ($p \approx 0.96$),
-while learned versus global remains significant ($p \approx 0.0015$). The reason is a
-confound, not a property of the fit itself: shrinking the trace shrinks the calibration
-sample and the evaluation hit count together, and it is the eval-side hit count, not
-calibration sample alone, that determines whether estimation noise ever surfaces in a
-measured stale-hit-rate.
+Learned and oracle are statistically indistinguishable ($U = 49.0$, $p \approx 0.94$,
+$r = 0.02$): learned's median stale-hit-rate equals oracle's exactly, and eight of ten seed
+pairs are byte-identical in raw stale-hit count. This is close to guaranteed by
+construction, and I want to be explicit about why rather than present it as a surprise. W1
+draws each cluster's true half-life from an exponential distribution; the staleness fitter
+assumes exactly that distribution when it fits $\lambda_c$. At 550--650 calibration
+observations per cluster here, well above the 30-observation fallback, maximum-likelihood
+estimation of an exponential rate recovers the true rate almost exactly when the data
+really is exponential with that rate. The defensible claim from this run alone is narrow:
+if content half-lives vary by topic and are close to exponential, per-cluster fitting from
+a few hundred observations recovers them and a pooled rate does not. It is not yet evidence
+that learned estimation is robust when its own model is wrong; Section~\ref{ssec:misspec}
+tests that directly.
 
-Figure~\ref{fig:brackets} shows both runs on one axis. The finding, stated plainly rather
-than reframed to match the design's anticipation: per-cluster fitting beats a single
-shared rate by a large, significant margin, and does so robustly across roughly a tenfold
-range of calibration sizes, tracking a rate the system could never observe. That is a
-stronger form of the underlying claim than ``learned lands strictly between the two
-brackets'' would have been, even though the literal bracket shape did not materialize.
+A first follow-up asked whether learned and oracle separate at a substantially smaller
+calibration sample, roughly sevenfold sparser (30--70 observations per cluster instead of
+550--650). They do not ($p \approx 0.96$), while learned versus global remains significant
+($p \approx 0.0015$). This traces to a confound, not a property of the fit: shrinking the
+trace shrinks the calibration sample and the evaluation-split hit count together, and it is
+the eval-side hit count, not calibration sample size alone, that determines whether
+estimation noise ever surfaces in a measured stale-hit-rate. Figure~\ref{fig:brackets}
+shows both runs on one axis.
+
+\subsubsection{Misspecification: what happens when the exponential assumption is wrong}
+\label{ssec:misspec}
+
+I reran the same design with W1's true half-life drawn from a Weibull distribution instead
+of an exponential, same mean per cluster, different shape (a shape parameter of 2 instead
+of the exponential's implicit 1). The staleness fitter is unchanged: it still assumes
+exponential decay, and that assumption is now wrong by construction.
+
+\begin{table}[htbp]
+\centering
+\caption{Under a misspecified (Weibull) half-life distribution, learned still separates
+significantly from global; learned and oracle both floor near zero rather than visibly
+separating, a floor effect from low hit counts rather than a demonstration of matching.}
+\label{tab:misspec}
+\begin{tabular}{lccc}
+\toprule
+Lambda source & Median stale-hit-rate & 95\% CI & Median n\_hits \\
+\midrule
+Global & 0.065 & (0.015, 0.127) & 132 \\
+Learned & 0.000 & (0.000, 0.004) & 122 \\
+Oracle & 0.000 & (0.000, 0.004) & 122 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Learned versus global remains significant, and more sharply so than under the
+well-specified run ($U = 0.0$, $p \approx 0.0001$, $r = 1.0$, a maximal effect size at
+$n=10$). Learned versus oracle no longer has a clean interpretation: both medians are
+exactly zero, and Mann-Whitney on a pair of mostly-zero samples ($p \approx 1$, $r
+\approx 0$) reflects a floor, not equivalence. What does carry signal is the raw per-seed
+stale-hit count, which is byte-identical between learned and oracle in 8 of 10 seeds
+(1, 0, 0, 0, 0, 0, 0, 0, 1, 0 for both). Even with the wrong decay shape, the per-cluster
+fitted rate lands close enough to the true mean rate to make the same serve/refresh decision
+as the oracle on almost every query, while global pooling, which mixes clusters with
+different half-lives into one rate, does not. This is a weaker and more honest claim than
+``learned matches oracle under misspecification'': the model class is still wrong, hit
+counts are still small, and I would not claim this generalizes to a larger deviation from
+exponential decay than shape 2 without rerunning it.
+
+Taken together, the finding from this section: per-cluster fitting from observed data
+beats a single pooled rate by a large, significant margin, both when its own exponential
+assumption holds and when it does not. It does not demonstrate, on its own, that the
+fitted rate is accurate in an absolute sense under misspecification, only that it still
+outperforms pooling and still makes decisions close to an oracle's on this workload.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\textwidth]{../analysis/figures/fig2_brackets.png}
 \caption{Stale-hit-rate under global, learned, and oracle lambda sources, at the original
-calibration scale and at a roughly sevenfold sparser calibration scale. Learned tracks
-oracle closely at both scales and separates significantly from global at both.}
+calibration scale and at a roughly sevenfold sparser calibration scale (both
+well-specified). Learned tracks oracle closely at both scales and separates significantly
+from global at both.}
 \label{fig:brackets}
 \end{figure}
 
 \subsection{Ablation: isolating the gate and the eviction term}
 \label{sec:ablation}
 
-Six configurations were run for ten seeds each on the same workload: stock LRU with the
-gate disabled, stock LFU with the gate disabled (the floor of comparison per Biton and
-Friedman's own finding that LRU underperforms on semantic workloads), a documented
-substitute for Biton and Friedman's own released policy with the gate disabled, the
-validity gate combined with plain LFU eviction, the validity gate combined with full
-FreCoS eviction, and the validity gate combined with FreCoS eviction with the
-size-normalization term removed.
+I ran six configurations for 10 seeds each on the same workload: stock LRU with the gate
+disabled; stock LFU with the gate disabled, the floor of comparison per Biton and
+Friedman's own finding that LRU underperforms on semantic workloads; a documented
+substitute for Biton and Friedman's released policy with the gate disabled; the validity
+gate combined with plain LFU eviction; the validity gate combined with full FreCoS
+eviction; and the validity gate combined with FreCoS eviction with the size-normalization
+term removed.
 
 \begin{table}[htbp]
 \centering
-\caption{Ablation: median stale-hit-rate and hit rate by row, 10 seeds each. Row 2 (LFU, gate off) is the floor of comparison.}
+\caption{Median stale-hit-rate, hit rate, and useful-hit-rate by row, 10 seeds each. Row 2
+(LFU, gate off) is the floor. Useful-hit-rate, hits that were both served and correct, out
+of all scored queries, is the number that actually reflects the trade-off: the gate removes
+roughly 1.4\% of useful hits (row 2 to row 5) while cutting stale hits per query from 3.5\%
+to 0.06\%.}
 \label{tab:ablation}
-\begin{tabular}{llccc}
+\begin{tabular}{llcccc}
 \toprule
-Row & Configuration & Stale-hit-rate & Hit rate & $\Delta$ stale-hit-rate vs.\ row 2 \\
+Row & Configuration & Stale-hit-rate & Hit rate & Useful-hit-rate & $\Delta$ vs.\ row 2 \\
 \midrule
-1 & LRU, gate off & 0.661 & 0.048 & $-0.019$ \\
-2 & LFU, gate off (floor) & 0.680 & 0.052 & --- \\
-3 & B\&F substitute, gate off & 0.680 & 0.052 & $+0.000$ \\
-4 & LFU, gate on & 0.042 & 0.017 & $-0.638$ \\
-5 & FreCoS, gate on (full stack) & 0.035 & 0.017 & $-0.645$ \\
-6 & FreCoS (no size), gate on & 0.042 & 0.017 & $-0.638$ \\
+1 & LRU, gate off & 0.661 & 0.048 & 0.017 & $-0.019$ \\
+2 & LFU, gate off (floor) & 0.680 & 0.052 & 0.017 & --- \\
+3 & B\&F substitute, gate off & 0.680 & 0.052 & 0.017 & $+0.000$ \\
+4 & LFU, gate on & 0.042 & 0.017 & 0.0166 & $-0.638$ \\
+5 & FreCoS, gate on (full stack) & 0.035 & 0.017 & 0.0165 & $-0.645$ \\
+6 & FreCoS (no size), gate on & 0.042 & 0.017 & 0.0165 & $-0.638$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Against the LFU floor, median 0.680, the gate collapses stale-hit-rate roughly fifteenfold
-in every gated row (Table~\ref{tab:ablation}): gate-plus-LFU reaches 0.042, the full stack
-0.035, the size-ablated variant 0.042. Hit rate drops by roughly a third, from 0.052 to
-about 0.017, the trade-off the design anticipated: the gate converts stale hits into
-misses by construction.
+Read as hit rate alone, the gate looks costly: 0.052 down to 0.017, a drop of about a
+third. Read per query rather than per hit, the picture changes. At the floor
+(row~2, median 392 hits, 262 stale, out of 7560 scored queries), useful hits, correct and
+non-stale, land at 0.017 of all queries and stale hits at 0.035. At the full stack
+(row~5, median 130 hits, 4.5 stale), useful hits are 0.0165 of all queries and stale hits
+0.0006. The gate removes almost none of the useful hits (0.017 to 0.0165, about 1.4\%) while
+eliminating roughly 98\% of the stale ones. cost\_saved\_usd is unchanged across every row
+(0.44--0.45) for the same reason: it counts only non-stale hits, and the set of queries that
+hit at all barely moves. The 15x figure in stale-hit-rate is a real number, but the
+comparison it flatters, against LFU with no freshness mechanism at all, is one any
+correctly-implemented TTL would win. The more informative comparison in
+Section~\ref{sec:brackets} is learned against global pooling, a 4x reduction, since that is
+the comparison that isolates what \emph{learning} the rate buys over the cheaper
+alternative of a hand-set global TTL.
 
 One row produced an unplanned but informative finding. The documented substitute for
-Biton and Friedman's policy turned out identical to plain LFU in every correctness and
-cost column, seed by seed, to full precision. This traces to a real workload property, not
-a bug: at this configuration's roughly five percent hit rate, almost every entry at
-eviction time has never been accessed a second time, so the substitute's
-frequency-divided-by-cost score evaluates to zero for essentially every candidate, and the
-policy falls through to LFU's own tie-break. The primary eviction comparator is therefore
-effectively untested by this workload's parameters, a limitation stated here rather than
-concealed.
+Biton and Friedman's policy turned out identical to plain LFU in every correctness and cost
+column, seed by seed, to full precision. This traces to a real workload property, not a
+bug: at this configuration's roughly 5\% hit rate, almost every entry at eviction time has
+never been accessed a second time, so the substitute's frequency-divided-by-cost score
+evaluates to zero for essentially every candidate, and the policy falls through to LFU's
+own tie-break. I did not have access to Biton and Friedman's released code in this build
+environment, and the substitute is, on this workload, indistinguishable from the LFU floor
+it was meant to sit alongside. This means the eviction axis in this report is compared only
+against count-based policies, not against the literature's own strongest published policy,
+which weakens the positioning claim in Section~1.2 that I compare against the literature
+rather than the product baseline; the literature comparison there is qualitative, not
+experimental.
 
 The predicted interaction, that the gate carries most of the improvement with the decay
-term contributing less on top than alone, held more strongly than anticipated. Isolating
-the gate's own effect (gate-plus-LFU against the floor) gives $-0.638$; isolating FreCoS's
-decay term on top of an active gate gives a further $-0.007$, an order of magnitude
-smaller and not statistically distinguishable from zero ($p \approx 0.97$, against
-$p \approx 0.0002$ for the gate's own effect). The gate accounts for roughly ninety-nine
-percent of the total move from floor to full stack. This is not the contradiction flagged
-as worth investigating in advance, since the predicted direction held; both components
-were checked for a shared cluster-identity bug regardless, and neither disagreed with the
-other about an entry's cluster.
+term contributing less on top than alone, held more strongly than I expected. Isolating the
+gate's own effect (gate-plus-LFU against the floor) gives $\Delta = -0.638$
+($U = 0.0$, $p \approx 0.0002$, $r = 1.0$); isolating FreCoS's decay term on top of an
+already-active gate gives a further $\Delta = -0.007$, an order of magnitude smaller and
+not statistically distinguishable from zero ($U = 50.5$, $p \approx 0.97$, $r = 0.01$). The
+gate accounts for roughly 99\% of the total move from floor to full stack. I checked both
+components for a shared cluster-identity bug regardless, since that was the specific
+integration failure I expected to be most likely; neither disagreed with the other about
+an entry's cluster.
 
-The size-normalization row was likewise indistinguishable from the full stack and from
-gate-plus-LFU on every metric. With the gate already filtering out anything stale, the
-entries eviction chooses among are uniformly fresh, leaving the decay term little to
-differentiate on; the size term's effect is plausibly more visible under tighter
-cache-size pressure, which the cache-size sweep below investigates.
+I expected the decay term to contribute measurably less than it contributes alone, not
+nothing measurable at all. The size-normalization row was likewise indistinguishable from
+the full stack on every metric at this cache size. I reran the same size-term comparison at
+a fifth of this cache size (330 entries, where eviction pressure is far higher) to check
+whether the null result was an artifact of low eviction pressure at 1650 entries: it was
+not ($U = 50.5$, $p \approx 0.97$, median stale-hit-rate 0.021 with size versus 0.021
+without). With the gate already filtering out anything stale, the entries eviction chooses
+among are uniformly fresh, and neither the decay term nor the size term differentiates much
+among them, at either cache size I tested.
+
+\begin{table}[htbp]
+\centering
+\caption{Real, measured latency and resource use at the LFU floor (row 2) and the full
+stack (row 5). Extension overhead (gate check plus cluster lookup) adds under a
+microsecond per decision; end-to-end latency is dominated by simulated miss cost
+(Section~4.2), not by the extension.}
+\label{tab:latency}
+\begin{tabular}{lcc}
+\toprule
+Metric & Row 2 (floor) & Row 5 (full stack) \\
+\midrule
+Extension overhead, mean ($\mu$s) & 0.57 & 0.69 \\
+Latency, mean (ms) & 128.9 & 133.7 \\
+Latency, p95 (ms) & 293.1 & 295.7 \\
+Latency, p99 (ms) & 450.3 & 453.0 \\
+Throughput (queries/s) & 7.76 & 7.48 \\
+Peak RSS (MB) & 43.8 & 34.8 \\
+CPU (\%) & 98.6 & 99.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[htbp]
 \centering
@@ -483,53 +633,53 @@ intervals. Row two, LFU with the gate disabled, is marked as the floor of compar
 \end{figure}
 
 \subsection{Cache-size sweep and the correctness-efficiency trade-off}
+\label{ssec:sweeps}
 
-Cache size was swept across five points spanning five to eighty percent of the workload's
-distinct-answer working set, full stack throughout. Hit rate rises from 0.013 at the
-smallest point to 0.017 at thirty percent, then flattens completely; the three largest
-points produce identical per-seed hit counts. The knee, identified where marginal
-hit-rate gain per additional entry drops by more than an order of magnitude relative to
-the previous step, falls at thirty percent: the slope drops roughly thirteenfold into that
-point and is exactly zero afterward. This cache size anchors every other sweep in this
-report.
+I swept cache size across 5 points spanning 5\%--80\% of the workload's distinct-answer
+working set, full stack throughout. Hit rate rises from 0.013 (median 98 hits) at the
+smallest point to 0.017 (132 hits) at 30\%, then flattens completely; the three largest
+points produce identical per-seed hit counts. The knee, where marginal hit-rate gain per
+additional entry drops by more than an order of magnitude relative to the previous step,
+falls at 30\% of the working set: the slope drops roughly 13x into that point and is
+exactly zero afterward. This cache size anchors every other sweep here.
 
-The trade-off curve this project's design calls its honest core comes from sweeping the
-gate's target confidence level while holding cache size fixed at that knee.
+The next sweep produces the trade-off curve this report's argument rests on most heavily:
+holding cache size fixed at that knee, I sweep the gate's target confidence level.
 
 \begin{table}[htbp]
 \centering
-\caption{TTL confidence sweep: median stale-hit-rate and hit rate as target confidence varies, 10 seeds each.}
+\caption{Raising TTL confidence from 0.80 to 0.99 buys a 16x reduction in stale-hit-rate
+for a 15\% reduction in hit rate; most of the stale-hit-rate gain is captured in the first
+step, 0.80 to 0.90.}
 \label{tab:ttl}
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \toprule
-TTL confidence & Median stale-hit-rate & Median hit rate \\
+TTL confidence & Median stale-hit-rate & Median hit rate & Median n\_hits \\
 \midrule
-0.80 & 0.126 & 0.019 \\
-0.90 & 0.042 & 0.017 \\
-0.95 & 0.023 & 0.017 \\
-0.99 & 0.008 & 0.016 \\
+0.80 & 0.126 & 0.019 & 146 \\
+0.90 & 0.042 & 0.017 & 132 \\
+0.95 & 0.023 & 0.017 & 129 \\
+0.99 & 0.008 & 0.016 & 124 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-As confidence rises from 0.80 to 0.99 (Table~\ref{tab:ttl}), stale-hit-rate falls from
-0.126 to 0.008, a sixteenfold reduction, while hit rate falls from 0.019 to 0.016, fifteen
-percent. The exchange is not uniform: most of the stale-hit-rate benefit is captured in the
-first step, 0.80 to 0.90, where it falls from 0.126 to 0.042, while hit rate erodes at a
-steadier pace across the full range. The cheapest correctness gains come early; pushing
-toward 0.99 buys a shrinking reduction in staleness for roughly the same ongoing hit-rate
-cost. This is a trade-off curve, not evidence a stricter gate is uniformly better: an
-operator chooses a point on it to suit their own tolerance for stale answers against
-misses.
+The exchange is not uniform: most of the stale-hit-rate benefit is captured in the first
+step, 0.80 to 0.90 (0.126 to 0.042), while hit rate erodes at a steadier pace across the
+full range. The cheapest correctness gains come early; pushing toward 0.99 buys a shrinking
+reduction in staleness for roughly the same ongoing hit-rate cost. This is a trade-off
+curve, not evidence a stricter gate is uniformly better: an operator chooses a point on it
+to suit their own tolerance for stale answers against misses.
 
-A fourth sweep varied cluster count at five, ten, twenty, and fifty. This came out
-non-monotone on both metrics, with every adjacent confidence interval overlapping heavily,
-so no directional effect is distinguishable from noise at ten seeds per point. A plausible
-mechanism: more clusters shrinks each one's calibration sample, making the learned rate
-noisier, while finer-grained clusters could in principle track heterogeneous half-lives
-more precisely, two effects pulling in opposite directions. This result sits in a
-supplementary table rather than a headline figure, since it clears neither the effect-size
-nor confidence-interval bar the rest of this report's figures were held to.
+A fourth sweep varied cluster count at 5, 10, 20, and 50. This came out non-monotone on
+both metrics, with every adjacent confidence interval overlapping heavily, so no directional
+effect is distinguishable from noise at 10 seeds per point. A plausible mechanism: more
+clusters shrinks each one's calibration sample, making the learned rate noisier, while
+finer-grained clusters could in principle track heterogeneous half-lives more precisely,
+two effects pulling in opposite directions. This result sits in a supplementary table
+(\texttt{analysis/figures/supplementary.csv}) rather than a headline figure, since it clears
+neither the effect-size nor confidence-interval bar the rest of this report's figures were
+held to.
 
 \begin{figure}[htbp]
 \centering
@@ -549,88 +699,124 @@ than a single winning configuration.}
 \end{figure}
 
 \section{Discussion}
+\label{sec:discussion}
 
-The headline claim this project set out to test, that fitting a staleness rate from
-observed data does measurable work beyond ignoring cluster structure or assuming a single
-global rate, is supported clearly and repeatedly: the learned rate beats naive pooling
-with a large, significant margin in every experiment that varied the lambda source,
-whether calibration data is abundant or an order of magnitude sparser. Learned tracking
-oracle rather than sitting at a visible midpoint is a stronger result for the underlying
-claim than the originally anticipated shape, even though it does not match the literal
-bracket picture predicted in advance; reporting it as the actual finding rather than
-reframing it is deliberate, since the alternative would misrepresent the data.
+Fitting a staleness rate from observed data beats both alternatives I tested, a single
+pooled rate and no rate at all, by a large, significant margin, including under a
+misspecified decay shape (Section~\ref{ssec:misspec}). Learned tracking oracle rather than
+sitting at a visible midpoint is narrower than the ``strictly between the two brackets''
+shape I originally expected: it means per-cluster maximum-likelihood estimation is
+accurate here, not that learning lands partway to a ceiling it approaches but cannot
+reach. I report this as the actual finding rather than the expected one.
 
-The second finding, that the gate rather than the decay term carries almost the entire
-improvement, is consistent with the design's intended division of labor: the gate is the
-correctness mechanism, the eviction term only a soft prior among entries already judged
-fresh. The ablation confirms that division more sharply than the design anticipated. A
-system wanting only the staleness-correctness gain without the added eviction complexity
-could plausibly adopt the gate alone.
+I expected the gate to carry most of the stale-hit-rate improvement with the decay term
+contributing less on top than alone. What I found is that the decay term's contribution is
+not distinguishable from zero at all, at either cache size I tested. The gate is the
+correctness mechanism; the eviction term, as measured here, does not add detectable work
+on top of it. A system wanting only the staleness-correctness gain could plausibly adopt
+the gate alone. That gate is, at bottom, a time-to-live learned per cluster rather than set
+globally by hand; Section~1.1 dismisses plain time-to-live caching as what weaker products
+already do, and this project's strongest result is a better time-to-live, not a mechanism
+outside that family.
 
-The correctness-efficiency trade-off is the part of this report that most needs to be read
-as a trade-off, not a win. Raising the gate's target confidence buys a large reduction in
-stale-hit-rate at a comparatively small, real cost in hit rate, and that exchange is
-front-loaded: most of the gain is available cheaply, further gains cost proportionally
-more in foregone hits. A system adopting this gate chooses a point on the curve according
-to how much a stale answer costs relative to a miss; this report does not claim a
-universally correct point.
+The correctness-efficiency trade-off in Section~\ref{ssec:sweeps} most needs to be read as
+a trade-off, not a win: raising the gate's target confidence buys a large stale-hit-rate
+reduction at a small, real hit-rate cost, front-loaded so early gains are cheap and later
+ones cost more. I do not claim a universally correct point on that curve.
 
-Two limitations bound how far these results generalize. First, every result comes from a
-synthetic, self-authored workload; the attempt to source external staleness ground truth
-from Wikipedia was made in good faith and abandoned on measured evidence, not convenience,
-but the limitation stands regardless. Second, the harness's exact-match index caps every
-absolute rate in this report well below a real semantic index, and every finding above is
-a relative comparison that shares this limitation identically across conditions. A reader
-should treat every rate here as directionally informative and every absolute value as an
-artifact of this harness, not a production estimate.
+Three limitations bound how far these results generalize. Every staleness result here
+comes from a synthetic, self-authored workload; I attempted external ground truth from
+Wikipedia and stopped after a feasibility spike measured 40\% rule agreement against an
+80\% bar set in advance. The harness's exact-match index caps every absolute rate well
+below a real semantic index and leaves false-hit-rate carrying no signal
+(Section~\ref{ssec:simmodel}); every finding is a relative comparison across conditions
+sharing that limitation, and I have not verified a semantic index would preserve the same
+rankings. Neither prior-art comparator, Biton and Friedman's released policy nor Cortex's
+LCFU, was actually run against this workload; the eviction axis is measured only against
+count-based policies.
 
 \section{Conclusion and future work}
 
-This project set out to name a gap in how semantic caches are evaluated, stale-hit-rate,
-and to build and measure a system that closes it without abandoning cost-awareness in
-eviction. The gate reliably converts most stale hits into misses at a bounded, quantified
-cost in hit rate; the learned per-cluster rate that feeds it outperforms naive pooling
-significantly and consistently, tracking an unreachable oracle rate across an order of
-magnitude of calibration sizes; and the eviction value function's cost and size terms
-behave correctly under every property test, even though their marginal contribution on top
-of an active gate is smaller than the design predicted.
+I set out to name a gap in how semantic caches are evaluated, stale-hit-rate, and to build
+a system that closes it without abandoning cost-awareness in eviction. The gate converts
+almost all stale hits into misses while removing only about 1.4\% of useful hits, at under
+a microsecond of measured overhead per decision. The learned per-cluster rate that feeds
+it beats naive pooling significantly and consistently, including under a misspecified
+decay shape. The eviction value function's cost and size terms behave correctly under
+every property test I wrote, but their measured contribution on top of an active gate is
+not distinguishable from zero at either cache size tested, smaller than expected.
 
-Several directions were deliberately set aside as grounded future work. A real semantic
-index in place of the exact-match harness would likely change every absolute number
-reported and is the change most likely to make results comparable to production; the
-relative findings are expected to be directionally robust to it, but this was not
-verified. Calibrating the generator's distributions against a real inference trace and
-content-update corpus, rather than the literature-informed proxies used here, would
+A real semantic index in place of the exact-match harness would likely change every
+absolute number here and is the change most likely to make results comparable to
+production; I expect the relative findings to survive it, but have not verified that.
+Running Biton and Friedman's policy directly, rather than the documented substitute,
+would close the comparator gap in Section~\ref{sec:discussion}. Calibrating the
+generator's distributions against a real inference trace and content-update corpus would
 strengthen external validity. Dynamic re-clustering under drift, a probabilistic staleness
-budget in the style of FreshCache, and admission control layered on the current policy were
-all named as future work in the original design and remain so.
+budget in the style of FreshCache, and admission control on top of the current policy
+remain future work, as in the original design.
 
 \appendix
-\section*{Appendix: code and data artifacts}
-
 \sloppy
-All code, tests, and results referenced in this report are in the project's git
-repository. The extension package lives under \texttt{gptcache\_ext/}, split into the
-serve-path pipeline seam (\texttt{pipeline.py}), additive metadata storage
-(\texttt{metadata.py}), the staleness model (\texttt{staleness/clusters.py},
-\texttt{staleness/fitter.py}, \texttt{staleness/gate.py}), and eviction
-(\texttt{eviction/frecos.py}, \texttt{eviction/baselines.py}). The synthetic workload
-generator is under \texttt{workloads/w1\_synthetic/}. The benchmark harness and its
-metrics are under \texttt{benchmarks/harness.py} and \texttt{benchmarks/metrics.py}; the
-four experiment runners referenced in Section~5 are under \texttt{benchmarks/runners/}.
-Every experiment's raw results and its own written summary are under \texttt{results/},
-organized by experiment (\texttt{results/brackets/}, \texttt{results/ablation/},
-\texttt{results/sweeps/}). Every figure in this report is regenerated from those results
-by a single command,
-\begin{quote}
-\texttt{cd analysis \&\& python3 make\_figures.py}
-\end{quote}
-with no hand-edited figure anywhere in this project. The reference oracle used to validate the
-pipeline's decision logic and the callable invariant suite run on every benchmark
-execution are under \texttt{tests/oracle/} and \texttt{tests/invariants.py}. The GPTCache
-commit this project vendors and every source-code claim made about its behavior in
-Section~2 are recorded in \texttt{docs/baseline-source-map.md}. The Wikipedia feasibility
-spike discussed in Section~4.1 is recorded in full in \texttt{docs/w2-feasibility.md}.
+\section*{Appendix A: correctness evidence}
+
+Correctness is checked at three levels, not asserted. A reference oracle
+(\texttt{tests/oracle/reference\_cache.py}) implements the same hit/miss/stale decision as
+the extension using a naive dict-and-linear-scan approach with no shared code, and every
+pipeline decision is cross-checked against it in \texttt{tests/test\_stock\_parity.py}. A
+callable invariant suite (\texttt{tests/invariants.py}) is run not only in unit tests but
+inside \texttt{benchmarks/harness.py} on every experimental run, checking budget bounds,
+argmin eviction selection, no entry served past its cluster's time-to-live, and that
+staleness decisions derive from creation time, never last-access time. Property-based tests
+in \texttt{tests/test\_frecos.py} check the eviction value function's monotonicity in each
+of its four terms independently.
+
+The most persuasive of these artifacts is a bug the invariant suite actually caught, not
+one I found by inspection: a cold-start regression test built to check that a fresh entry
+must not score zero (Equation~\ref{eq:value}) failed against the literal formula in my
+original design, which is how I found and fixed the $\log(1+\text{freq}) \to
+\log(2+\text{freq})$ issue described in Section~3.1.
+
+\section*{Appendix B: code and data artifacts}
+
+This repository has not yet been pushed to a public remote; it is currently local-only.
+A \texttt{Dockerfile} and \texttt{environment.yml} build a working environment from a
+clean clone, and \texttt{.github/workflows/ci.yml} reruns the full test suite and a
+benchmark smoke test on every commit. \texttt{benchmarks/samples/smoke\_row.csv} and
+\texttt{smoke\_row.json} are committed sample benchmark logs reproducible with
+\texttt{make bench-smoke}.
+
+\begin{table}[htbp]
+\centering
+\caption{Where every artifact referenced in this report lives in the repository.}
+\label{tab:appendix}
+\begin{tabular}{ll}
+\toprule
+Artifact & Location \\
+\midrule
+Pipeline seam (serve-path decision) & \texttt{gptcache\_ext/pipeline.py} \\
+Additive metadata storage & \texttt{gptcache\_ext/metadata.py} \\
+Staleness model (clustering, fitter, gate) & \texttt{gptcache\_ext/staleness/} \\
+Eviction (FreCoS and baselines) & \texttt{gptcache\_ext/eviction/} \\
+Synthetic workload generator (W1) & \texttt{workloads/w1\_synthetic/} \\
+Benchmark harness and metrics & \texttt{benchmarks/harness.py}, \texttt{metrics.py} \\
+Experiment runners (Section~5) & \texttt{benchmarks/runners/} \\
+Raw results per experiment & \texttt{results/brackets/}, \texttt{ablation/}, \texttt{sweeps/} \\
+Figure regeneration (one command) & \texttt{cd analysis \&\& python3 make\_figures.py} \\
+Reference oracle & \texttt{tests/oracle/reference\_cache.py} \\
+Invariant suite & \texttt{tests/invariants.py} \\
+Property tests & \texttt{tests/test\_frecos.py} \\
+GPTCache pinned commit and source-map & \texttt{docs/baseline-source-map.md} \\
+Wikipedia feasibility spike & \texttt{docs/w2-feasibility.md} \\
+Docker / environment for a clean rebuild & \texttt{Dockerfile}, \texttt{environment.yml} \\
+Continuous integration & \texttt{.github/workflows/ci.yml} \\
+Sample benchmark logs & \texttt{benchmarks/samples/} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No figure in this report is hand-edited; every one is regenerated directly from a
+committed results CSV by the single command in Table~\ref{tab:appendix}.
 
 \begin{thebibliography}{99}
 
@@ -640,9 +826,11 @@ N.\ Biton and R.\ Friedman.
 arXiv:2603.03301, 2026.
 
 \bibitem{cortex2026}
-Cortex authors.
-\emph{Cortex: A Cost-Aware Semantic Caching System for LLM Serving}.
-arXiv:2509.17360, 2026. NSDI 2026; earlier preprint circulated as ``Asteria''.
+C.\ Ruan, C.\ Bi, K.\ Zheng, Z.\ Shi, X.\ Wan, and J.\ Li.
+\emph{Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access for LLM via
+Semantic-Aware Knowledge Caching}.
+arXiv:2509.17360, 2026. NSDI 2026; earlier preprint circulated under the title
+``Asteria.''
 
 \bibitem{gdsf2001}
 L.\ Cherkasova and G.\ Ciardo.
@@ -651,23 +839,24 @@ Proceedings of the International Conference on High-Performance Computing and
 Networking (HPCN), 2001.
 
 \bibitem{categoryaware2025}
-Category-Aware authors.
-\emph{Category-Aware Semantic Caching for Large Language Model Serving}.
+C.\ Wang, X.\ Liu, Y.\ Zhu, A.\ Youssef, P.\ Nagpurkar, and H.\ Chen.
+\emph{Category-Aware Semantic Caching for Heterogeneous LLM Workloads}.
 arXiv:2510.26835, 2025.
 
 \bibitem{freshcache2026}
-FreshCache authors.
-\emph{FreshCache: Probabilistic Staleness Budgets for Retrieval-Augmented Generation}.
+M.\ Mansoor, T.\ Ahmad, and Y.-C.\ Yoon.
+\emph{Risk-Constrained Freshness-Aware Semantic Caching for Open-Web
+Retrieval-Augmented LLMs}.
 arXiv:2607.04281, 2026.
 
 \bibitem{scalm2024}
-SCALM authors.
+J.\ Li, C.\ Xu, F.\ Wang, I.\ M.\ von Riedemann, C.\ Zhang, and J.\ Liu.
 \emph{SCALM: Towards Semantic Caching for Automated Chat Services with Large Language
 Models}.
 arXiv:2406.00025, 2024.
 
 \bibitem{meancache2024}
-MeanCache authors.
+W.\ Gill, M.\ Elidrisi, P.\ Kalapatapu, A.\ Ahmed, A.\ Anwar, and M.\ A.\ Gulzar.
 \emph{MeanCache: User-Centric Semantic Caching for LLM Web Services}.
 arXiv:2403.02694, 2024.
 
@@ -677,7 +866,8 @@ G.\ Einziger and R.\ Friedman.
 arXiv:1512.00727, 2015.
 
 \bibitem{vcache2025}
-vCache authors.
+L.\ G.\ Schroeder, A.\ Desai, A.\ Cuadron, K.\ Chu, S.\ Liu, M.\ Zhao, S.\ Krusche,
+A.\ Kemper, M.\ Zaharia, and J.\ E.\ Gonzalez.
 \emph{vCache: Verified Semantic Prompt Caching}.
 arXiv:2502.03771, 2025. ICLR 2026.
 
