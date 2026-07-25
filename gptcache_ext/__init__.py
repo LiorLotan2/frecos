@@ -7,9 +7,9 @@ from gptcache_ext.contracts import (
     EvictionPolicy,
 )
 
-# from gptcache_ext.pipeline import decide, NullGate      # A2
-# from gptcache_ext.metadata import get_meta               # A2
-# from gptcache_ext.config import Config                   # A2
+from gptcache_ext.pipeline import decide, NullGate
+from gptcache_ext.metadata import get_meta
+from gptcache_ext.config import Config
 
 __all__ = [
     "Decision",
@@ -18,4 +18,8 @@ __all__ = [
     "StalenessTable",
     "Gate",
     "EvictionPolicy",
+    "decide",
+    "NullGate",
+    "get_meta",
+    "Config",
 ]
