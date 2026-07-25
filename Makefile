@@ -11,6 +11,6 @@ test:
 	$(PYTEST)
 
 bench-smoke:
-	@echo "bench-smoke: harness not built yet (see A7 in docs/implementation-plan.md)"
+	$(PYTEST) tests/test_bench_smoke.py -q
 
 verify: test bench-smoke
