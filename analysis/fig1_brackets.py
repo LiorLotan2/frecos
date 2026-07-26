@@ -43,7 +43,7 @@ def main():
     ax.set_ylabel("stale-hit-rate (median, 95% CI)")
     ax.legend()
     fig.tight_layout()
-    out = save_figure(fig, "fig2_brackets.png")
+    out = save_figure(fig, "fig1_brackets.png")
     print(out)
 
 

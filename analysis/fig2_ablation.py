@@ -50,7 +50,7 @@ def main():
     )
     ax.legend()
     fig.tight_layout()
-    out = save_figure(fig, "fig1_ablation_stale_hit_rate.png")
+    out = save_figure(fig, "fig2_ablation_stale_hit_rate.png")
     print(out)
 
 
