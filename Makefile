@@ -4,7 +4,7 @@ PYTEST := $(RUNPY) -m pytest
 
 .PHONY: install test bench-smoke experiment-smoke verify \
 	experiments exp-brackets exp-ablation exp-brackets-calibration-sweep \
-	exp-brackets-misspecified exp-brackets-mixture exp-size-term-isolation exp-sweeps \
+	exp-brackets-misspecified exp-brackets-mixture exp-sweeps \
 	figures report
 
 install:
@@ -36,16 +36,13 @@ exp-brackets-misspecified:
 exp-brackets-mixture:
 	$(RUNPY) -m benchmarks.runners.brackets_mixture
 
-exp-size-term-isolation:
-	$(RUNPY) -m benchmarks.runners.size_term_isolation
-
 exp-sweeps:
 	$(RUNPY) -m benchmarks.runners.sweeps
 
 # Dependency order: brackets before its calibration/misspecification/mixture
-# follow-ups, ablation before the size-term-isolation follow-up.
+# follow-ups.
 experiments: exp-brackets exp-ablation exp-brackets-calibration-sweep \
-	exp-brackets-misspecified exp-brackets-mixture exp-size-term-isolation exp-sweeps
+	exp-brackets-misspecified exp-brackets-mixture exp-sweeps
 
 figures:
 	PYTHONPATH=vendor/gptcache:.:analysis $(PYTHON) analysis/make_figures.py

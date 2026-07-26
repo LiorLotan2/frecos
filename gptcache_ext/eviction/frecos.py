@@ -1,4 +1,4 @@
-"""FreCoS eviction policy: value = log(2+freq) * log(1+kappa*regen_cost) * exp(-lambda*age) / size.
+"""FreCoS eviction policy: value = log(2+freq) * log(1+kappa*regen_cost) * exp(-lambda*age).
 
 Selectable the same way stock policies are (policy="FRECOS") via register() at the bottom,
 which monkeypatches GPTCache's own EvictionBase.get() factory rather than registering a real
@@ -13,6 +13,19 @@ The freq term uses log(2+freq), not the log(1+freq) in the original design note:
 log(1+0) is exactly 0 and zeroes the whole product regardless of cost, age, or size, so a
 brand-new entry would always be the eviction victim. log(2+freq) keeps the same shape (still
 concave, still increasing) while giving a fresh entry a strictly positive score.
+
+No /size_bytes term: an earlier version divided by size_bytes to reward evicting large
+entries first, but eviction here runs under an entry-count budget (evict one entry when the
+count exceeds cache_size_entries), not a byte budget. Under a count budget, evicting a
+10-byte entry and a 10,000-byte entry both free exactly one slot, so size-normalizing the
+value function has no budget-economics meaning - it can only reshuffle which same-count-cost
+entry gets evicted, not reward freeing more bytes, because bytes freed is never what the
+budget check measures. This was verified empirically, not just derived on paper: an ablation
+that dropped the /size_bytes term at the smallest cache-size point in this project's sweep
+(where eviction pressure is highest) found FreCoS with and without the term statistically
+indistinguishable on every metric (see results/ablation/size_term_isolation/summary.md). A
+size term would only be meaningful if eviction were budgeted in bytes, which this project's
+harness does not implement.
 """
 import math
 from typing import Optional, Sequence
@@ -27,30 +40,24 @@ class FreCoSEviction:
 
     :param staleness_table: per-cluster lambda lookup, contracts.StalenessTable.
     :param kappa: scales regen_cost (USD, typically small) before log-compressing it.
-    :param no_size: if True, drops the /size_bytes divisor. Ablation flag, not a fork.
     """
 
     def __init__(
         self,
         staleness_table: StalenessTable,
         kappa: float = DEFAULT_KAPPA,
-        no_size: bool = False,
     ):
         self.staleness_table = staleness_table
         self.kappa = kappa
-        self.no_size = no_size
 
     def value(self, meta: EntryMeta, now: float) -> float:
         age = now - meta.create_on
         lambda_c = self.staleness_table.get(meta.cluster_id).lambda_
-        score = (
+        return (
             math.log(2.0 + meta.freq)
             * math.log1p(self.kappa * meta.regen_cost)
             * math.exp(-lambda_c * age)
         )
-        if not self.no_size:
-            score /= meta.size_bytes
-        return score
 
     def select_victim(self, metas: Sequence[EntryMeta], now: float) -> int:
         best = min(metas, key=lambda m: (self.value(m, now), m.create_on, m.entry_id))
@@ -82,7 +89,6 @@ def register():
             metadata_store: Optional[MetadataStore] = None,
             staleness_table: Optional[StalenessTable] = None,
             kappa: float = DEFAULT_KAPPA,
-            no_size: bool = False,
             **kwargs,
         ):
             self._maxsize = maxsize
@@ -90,7 +96,7 @@ def register():
             self._on_evict = on_evict
             self._metadata_store = metadata_store
             self._entry_ids: list = []
-            self._policy = FreCoSEviction(staleness_table, kappa=kappa, no_size=no_size)
+            self._policy = FreCoSEviction(staleness_table, kappa=kappa)
 
         def put(self, objs):
             self._entry_ids.extend(objs)

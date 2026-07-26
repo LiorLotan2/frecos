@@ -121,10 +121,13 @@ experiments take minutes; small-trace or sweep experiments take seconds) should 
 | `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) | ~11s |
 | `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) | ~6m 48s |
 | `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` | ~6m 08s |
-| `make exp-size-term-isolation` | `results/ablation/size_term_isolation/results.csv` | Discussion §5.2 (size-term follow-up) | ~1m 09s |
 | `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` | ~28m 05s |
 
-`make experiments` runs all seven sequentially (~56 minutes total on the machine above).
+`make experiments` runs these six sequentially. (A seventh runner,
+`benchmarks/runners/size_term_isolation.py`, was removed after its own finding -- the
+committed `results/ablation/size_term_isolation/` is no longer regenerable, since
+FreCoS's eviction value function no longer has a size-normalization term to isolate;
+see `gptcache_ext/eviction/frecos.py`'s module docstring and `CHANGES.md`.)
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is

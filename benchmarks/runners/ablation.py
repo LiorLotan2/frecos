@@ -1,7 +1,7 @@
 """Ablation experiment: isolate the contribution of the gate and of FreCoS eviction's
-value function, plus a size-normalization variant.
+value function.
 
-Design: W1 eval split, six rows crossed with 10 seeds each.
+Design: W1 eval split, five rows crossed with 10 seeds each.
 
 | Row | Gate | Eviction                     | Isolates                          |
 |-----|------|-------------------------------|------------------------------------|
@@ -10,7 +10,12 @@ Design: W1 eval split, six rows crossed with 10 seeds each.
 | 3   | off  | Biton & Friedman substitute  | primary comparator                 |
 | 4   | on   | LFU                          | the gate alone                     |
 | 5   | on   | FreCoS                       | full stack                         |
-| 6   | on   | FreCoS --no-size             | size normalization ablation        |
+
+FreCoS's value function has no size-normalization term (see gptcache_ext/eviction/
+frecos.py's module docstring for why: an entry-count eviction budget gives /size_bytes
+no economics to act through, verified empirically in
+results/ablation/size_term_isolation/), so there is no size-normalization ablation row
+here to isolate.
 
 Row 2 (LFU), not row 1 (LRU), is the comparison of record throughout: Biton & Friedman's
 own finding is that LRU is weak on semantic workloads, so an improvement over LRU alone
@@ -57,7 +62,6 @@ ROWS = [
     ("row3_bf", False, "BF_SUBSTITUTE"),
     ("row4_gate_lfu", True, "LFU"),
     ("row5_gate_frecos", True, "FRECOS"),
-    ("row6_gate_frecos_nosize", True, "FRECOS_NOSIZE"),
 ]
 
 
@@ -86,8 +90,6 @@ def build_eviction(policy_name, staleness_table):
         return BitonFriedmanSubstituteEviction()
     if policy_name == "FRECOS":
         return FreCoSEviction(staleness_table)
-    if policy_name == "FRECOS_NOSIZE":
-        return FreCoSEviction(staleness_table, no_size=True)
     raise ValueError(f"unknown eviction policy {policy_name!r}")
 
 

@@ -87,18 +87,12 @@ def test_monotone_decreasing_in_age(policy):
     assert policy.value(young, NOW) > policy.value(old, NOW)
 
 
-def test_monotone_decreasing_in_size(policy):
+def test_value_ignores_size_bytes(policy):
+    # No /size_bytes term: eviction here runs under an entry-count budget, which gives
+    # size-normalization no economics to act through (see frecos.py's module docstring).
     small = make_meta(size_bytes=10)
     large = make_meta(size_bytes=1000)
-    assert policy.value(small, NOW) > policy.value(large, NOW)
-
-
-def test_no_size_flag_drops_divisor():
-    table = FakeStalenessTable()
-    with_size = FreCoSEviction(table, no_size=False)
-    without_size = FreCoSEviction(table, no_size=True)
-    meta = make_meta(size_bytes=100)
-    assert without_size.value(meta, NOW) == pytest.approx(with_size.value(meta, NOW) * 100)
+    assert policy.value(small, NOW) == policy.value(large, NOW)
 
 
 # --- Deterministic tie-break -------------------------------------------------
@@ -156,13 +150,6 @@ def test_cheaper_regen_cost_evicted_first(policy):
     expensive = make_meta(entry_id=2, regen_cost=1.0)
     victim = policy.select_victim([cheap, expensive], NOW)
     assert victim == cheap.entry_id
-
-
-def test_larger_size_evicted_first(policy):
-    small = make_meta(entry_id=1, size_bytes=10)
-    large = make_meta(entry_id=2, size_bytes=10_000)
-    victim = policy.select_victim([small, large], NOW)
-    assert victim == large.entry_id
 
 
 def test_lower_freq_evicted_first(policy):
