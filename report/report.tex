@@ -122,8 +122,8 @@ policies combine access-pattern signals only, while FreCoS adds two orthogonal s
 regeneration cost and content validity over time, and evaluates against a correctness
 metric, stale-hit-rate, that their setting never defines.
 
-The structurally closest published eviction formula is Cortex's LCFU policy~[2] (earlier
-preprint: Asteria), which scores an entry as a product of log-scaled frequency, cost,
+The structurally closest published eviction formula is Cortex's LCFU policy~[2], which
+scores an entry as a product of log-scaled frequency, cost,
 latency, and a staleness term, divided by size, with a time-to-live purge on top. The
 difference is narrow: Cortex's staleness term is a static ``staticity'' score assigned by
 a language model at write time, while FreCoS learns a decay rate per cluster from observed
@@ -885,16 +885,15 @@ committed results CSV by the single command in Table~\ref{tab:appendix}.
 \begin{thebibliography}{99}
 
 \bibitem{bitonfriedman2026}
-N.\ Biton and R.\ Friedman.
-\emph{From Exact Hits to Close Enough: Eviction Policies for Semantic Caches}.
+D.\ D.\ Biton and R.\ Friedman.
+\emph{From Exact Hits to Close Enough: Semantic Caching for LLM Embeddings}.
 arXiv:2603.03301, 2026.
 
 \bibitem{cortex2026}
 C.\ Ruan, C.\ Bi, K.\ Zheng, Z.\ Shi, X.\ Wan, and J.\ Li.
 \emph{Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access for LLM via
 Semantic-Aware Knowledge Caching}.
-arXiv:2509.17360, 2026. NSDI 2026; earlier preprint circulated under the title
-``Asteria.''
+arXiv:2509.17360, 2025.
 
 \bibitem{gdsf2001}
 L.\ Cherkasova and G.\ Ciardo.
@@ -925,7 +924,7 @@ W.\ Gill, M.\ Elidrisi, P.\ Kalapatapu, A.\ Ahmed, A.\ Anwar, and M.\ A.\ Gulzar
 arXiv:2403.02694, 2024.
 
 \bibitem{tinylfu2015}
-G.\ Einziger and R.\ Friedman.
+G.\ Einziger, R.\ Friedman, and B.\ Manes.
 \emph{TinyLFU: A Highly Efficient Cache Admission Policy}.
 arXiv:1512.00727, 2015.
 

@@ -109,21 +109,24 @@ is a runner module under `benchmarks/runners/`, a thin script over `harness.py` 
 writes its results CSV under `results/`. `make experiments` runs all seven in dependency
 order; each also has its own `make exp-*` target if you only want to rerun one.
 
-Runtimes below were measured on a single run of each target on the machine this branch
-was prepared on (Apple Silicon, macOS, one core saturated per run); wall-clock on CI or a
-different machine will differ, but the relative ordering (bracket-style, 12k-query
-experiments take minutes; small-trace or sweep experiments take seconds) should hold.
+**Runtimes below are stale** (measured before the embedder-based clustering and
+semantic index were wired in) and are being remeasured against the current code; see
+`CHANGES.md` for the up-to-date numbers once that rerun completes. Every runner now
+also embeds each distinct query text once via the vendored ONNX model (cached to disk
+under `.embedding_cache/`, gitignored, keyed by text hash), which dominates first-run
+wall-clock; reruns against a warm cache are much faster.
 
-| Command | Output CSV | Report table/figure | Measured runtime |
-|---|---|---|---|
-| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` | ~6m 35s |
-| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` | ~6m 45s |
-| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) | ~11s |
-| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) | ~6m 48s |
-| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` | ~6m 08s |
-| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` | ~28m 05s |
+| Command | Output CSV | Report table/figure |
+|---|---|---|
+| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` |
+| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` |
+| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) |
+| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) |
+| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` |
+| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` |
+| `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Discussion §5.3 (gate-off cost-aware eviction test) |
 
-`make experiments` runs these six sequentially. (A seventh runner,
+`make experiments` runs all seven sequentially. (An earlier eighth runner,
 `benchmarks/runners/size_term_isolation.py`, was removed after its own finding -- the
 committed `results/ablation/size_term_isolation/` is no longer regenerable, since
 FreCoS's eviction value function no longer has a size-normalization term to isolate;

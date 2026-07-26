@@ -4,7 +4,7 @@ PYTEST := $(RUNPY) -m pytest
 
 .PHONY: install test bench-smoke experiment-smoke verify \
 	experiments exp-brackets exp-ablation exp-brackets-calibration-sweep \
-	exp-brackets-misspecified exp-brackets-mixture exp-sweeps \
+	exp-brackets-misspecified exp-brackets-mixture exp-sweeps exp-cost-aware-eviction \
 	figures report
 
 install:
@@ -39,10 +39,13 @@ exp-brackets-mixture:
 exp-sweeps:
 	$(RUNPY) -m benchmarks.runners.sweeps
 
+exp-cost-aware-eviction:
+	$(RUNPY) -m benchmarks.runners.cost_aware_eviction
+
 # Dependency order: brackets before its calibration/misspecification/mixture
 # follow-ups.
 experiments: exp-brackets exp-ablation exp-brackets-calibration-sweep \
-	exp-brackets-misspecified exp-brackets-mixture exp-sweeps
+	exp-brackets-misspecified exp-brackets-mixture exp-sweeps exp-cost-aware-eviction
 
 figures:
 	PYTHONPATH=vendor/gptcache:.:analysis $(PYTHON) analysis/make_figures.py
