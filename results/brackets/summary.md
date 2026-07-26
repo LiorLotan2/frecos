@@ -2,107 +2,103 @@
 
 ## Verdict
 
-Mixed, and worth flagging to the human rather than silently rounding it to a clean pass.
+Rerun with real embedder-based clustering and a semantic index (previously this ran
+with oracle-perfect cluster identity and exact-match lookup). The finding reverses
+compared to the earlier oracle-cluster run: learned is no longer distinguishable from
+global (p ~ 0.94), and is now significantly worse than oracle (p ~ 0.0005, r ~ 0.78).
+Under oracle cluster identity, learned tracked oracle almost exactly and clearly beat
+global; under real clustering, learned tracks global almost exactly and clearly loses
+to oracle. The clustering step, not the per-cluster MLE fit, is now the bottleneck.
 
-Gate 3 asks two things: does learned lambda land strictly between global and oracle on
-stale_hit_rate, and are the confidence intervals for learned and global non-overlapping.
+Root cause, verified directly rather than assumed: the adjusted Rand index between the
+generator's true cluster labels and the k-means-on-embeddings assignment is 0.036-0.062
+across the 30 runs -- barely above what a random assignment would produce. Direct
+inspection of the embeddings explains why: the W1 generator's canonical query template
+("What is the current status of topic {cluster}-{answer}?") is identical across every
+cluster except two embedded numbers, and a general-purpose sentence embedder scores
+cross-cluster template pairs at 0.6-0.9 cosine similarity, often higher than genuine
+paraphrase pairs. The text simply does not encode cluster identity in a way a real
+embedder can recover; this is a property of the workload's text design, not a bug in
+the k-means implementation (gptcache_ext/staleness/clusters.py) or the embedder wiring
+(gptcache_ext/staleness/embedder.py).
 
-The second half passes cleanly: learned's 95% CI is (0.0242, 0.0604) and global's is
-(0.0851, 0.2143) -- no overlap, and Mann-Whitney U on learned vs global gives p ~ 0.0005.
-Global is significantly worse.
-
-The first half does not hold in the literal "strictly between" sense. Learned's median
-stale_hit_rate is 0.0350 and oracle's is also 0.0350 -- in 8 of 10 seeds the two runs
-produce byte-identical rows, and Mann-Whitney U on learned vs oracle gives p ~ 0.94, no
-detectable difference. Learned isn't sitting in the middle of the bracket, it is sitting
-at the oracle end of it. Global is the outlier, not the midpoint anchor.
-
-This is not the failure mode the design doc worried about (learned collapsing onto
-global). It is closer to the opposite: with this trace size, every cluster has 550-650
-calibration observations, far above the fitter's n_obs >= 30 fallback threshold, so the
-per-cluster MLE essentially recovers the true generator lambda and learned mode is
-statistically indistinguishable from oracle mode. Flagging this for the human: the
-literal Gate 3 checkbox ("strictly between") reads as failed, but the substantive claim
-downstream experiments care about -- that per-cluster fitting beats a single pooled rate
--- is strongly supported. Whether that counts as a pass probably depends on whether Gate
-3's intent was "learned works and is distinguishable from the naive baseline" (yes) or
-"learned sits at a visibly intermediate point between the two brackets" (no, at this
-calibration sample size). Recommend not treating this as the design doc's anticipated
-negative-result trigger for a full characterization pivot (design sec 5.5), but a lighter
-follow-up (the ablation and sweep experiments) checking whether the learned/oracle gap opens up at smaller
-calibration sample sizes or under injected drift would be a reasonable thing to note as
-a limitation.
+false_hit_rate is no longer identically zero, another effect of the same underlying
+cause but on a different axis: the semantic index's 0.8 cosine threshold accepts the
+same template-similarity that defeats clustering, so it also serves many false hits
+(median false_hit_rate ~0.97 across all three lambda_source conditions -- see Results).
+This was invisible under the old exact-match index, which structurally could not have a
+false hit.
 
 ## Setup
 
 W1 eval split, gate enabled, FreCoS eviction, cache_size_entries = 1650, ttl_confidence =
 0.9, cluster_count_k = 10. Three lambda_source values (global, learned, oracle) x 10
 seeds (0-9) = 30 runs. results.csv has exactly 30 rows plus header, columns match
-benchmarks.harness.CSV_COLUMNS exactly.
+benchmarks.harness.CSV_COLUMNS exactly (now including cluster_ari).
+
+Each row's cluster_id comes from gptcache_ext.staleness.assign_real_clusters: every
+distinct query text in the trace is embedded once (GPTCache's default ONNX model,
+cached to disk by text hash), k-means is fit on the calibration split's embeddings, and
+every row (calibration and eval) is assigned to its nearest centroid. The generator's
+true cluster label is kept as true_cluster_id for the ARI figure only. For the oracle
+arm specifically, cluster_id is restored to true_cluster_id after the ARI is computed:
+oracle_lambdas_for_seed's table is keyed by the generator's true cluster, and under
+real, imperfect clustering a learned cluster id no longer maps 1:1 to a true cluster,
+so oracle's fit and serve path must keep using true cluster identity to retain its
+original meaning (the ceiling a perfect clusterer would achieve).
+
+Lookup is now benchmarks.semantic_index.SemanticIndex: brute-force cosine similarity
+against every cached entry's embedding, GPTCache's default 0.8 threshold, replacing the
+prior exact-text-match index.
 
 Ten distinct traces were generated, one per seed, rather than one trace replayed ten
-times. The pipeline has no randomness of its own once a trace is fixed (eviction and the
-gate are deterministic given metadata), so replaying a single trace ten times would give
-ten byte-identical rows per lambda_source and nothing to bootstrap over. A fresh trace
-per seed is what makes the seed axis in the plan mean anything.
+times, for the same reason as always: the pipeline has no randomness of its own once a
+trace is fixed, so a repeated trace would give nothing to bootstrap over.
 
-n_queries = 12000 per trace (n_tenants=5, n_clusters=10), which yields exactly 6600
-distinct answer_ids regardless of seed (4200 canonical + 2400 longtail; paraphrase and
-repeat rows reuse existing answer_ids, so they don't add distinct ones). Cache size 1650
-entries is 25% of that, inside the 20-30% range this card asks for as a placeholder
-mid-point ahead of the real cache-size sweep.
-
-oracle_lambdas were reconstructed per seed by calling np.random.default_rng(seed) then
-cluster_params(n_clusters, rng) -- the exact same first two lines generate_trace itself
-runs before drawing anything else -- rather than inferring lambda from the trace's own
-valid_until - t durations. The trace does not label which rows came from which
-cluster_params draw in a way that would let you separate "true half-life" noise from
-"sampled outcome" noise, so reconstructing the generator's own draw with an identical
-seeded RNG call is the exact reproduction, not an approximation.
-
-Known limitation carried over from the harness: it uses an exact-text-match index, no
-semantic embedding index exists yet in this project, so paraphrase rows in the trace
-never hit -- only literal repeats of a canonical query text do. Hit counts across all 30
-runs are in the 116-165 range out of roughly 12,600 scored queries per run, well below
-what a real semantic cache would show. This caps the sample of hits stale_hit_rate is
-computed over and widens the CIs; it does not change the direction of the global vs
-learned/oracle comparison, since the exact-match limitation applies identically to all
-three lambda_source conditions.
+n_queries = 12000 per trace (n_tenants=5, n_clusters=10), cache_size_entries=1650.
 
 ## Bootstrap method
 
-Simple percentile bootstrap over the 10 per-seed values in each lambda_source group:
-10,000 resamples with replacement (n=10 each), median taken of each resample, and the
-95% CI read off the 2.5th and 97.5th percentiles of the resulting distribution of
-medians. Implemented with Python's stdlib random module, seeded (12345) for
-reproducibility.
+Percentile bootstrap over the 10 per-seed values in each lambda_source group: 10,000
+resamples with replacement (n=10 each), median of each resample, 95% CI from the
+2.5th/97.5th percentiles. Python stdlib random, seeded 12345.
 
 ## Mann-Whitney U
 
-scipy is not installed in this environment (environment.yml does not list it, and pip
-installs are blocked by the sandbox's externally-managed-environment guard), so the U
-statistic and its two-sided p-value were implemented directly: ranks with average-rank
-tie handling, U = R1 - n1(n1+1)/2, normal approximation for the p-value with the standard
-tie correction to the variance term. About 20 lines, no dependency added.
+Hand-rolled (scipy not available in this sandbox): ranks with average-rank tie
+handling, U = R1 - n1(n1+1)/2, normal approximation for the p-value with the standard
+tie correction to the variance term, rank-biserial r = |z|/sqrt(n1+n2) as effect size.
 
 ## Results
 
-| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | 95% CI |
-|---|---|---|---|---|
-| global | 0.1436 | (0.0851, 0.2143) | 0.4480 | (0.3439, 0.5354) |
-| learned | 0.0350 | (0.0242, 0.0604) | 0.4485 | (0.3440, 0.5367) |
-| oracle | 0.0350 | (0.0284, 0.0639) | 0.4485 | (0.3440, 0.5367) |
+| lambda_source | median stale_hit_rate | 95% CI | median false_hit_rate | median cost_saved_usd | 95% CI | median cluster_ari |
+|---|---|---|---|---|---|---|
+| global | 0.0772 | (0.0571, 0.0973) | ~0.97 | 14.86 | (11.77, 17.47) | 0.036 |
+| learned | 0.0707 | (0.0594, 0.0909) | ~0.97 | 14.95 | (11.66, 17.07) | 0.036 |
+| oracle | 0.0416 | (0.0387, 0.0469) | ~0.97 | 15.51 | (12.03, 17.89) | 0.036 |
+
+(cluster_ari is identical across lambda_source rows within a seed, since clustering is
+fit once per trace before lambda_source-specific fitting; the median above is over all
+30 rows.)
 
 Mann-Whitney U, stale_hit_rate:
 
-- learned vs global: U = 4.0, p ~ 0.00051 (significant, learned lower)
-- learned vs oracle: U = 49.0, p ~ 0.9396 (not significant, indistinguishable)
+- learned vs global: U = 49.0, p ~ 0.940, r ~ 0.017 (not significant, indistinguishable)
+- learned vs oracle: U = 96.0, p ~ 0.0005, r ~ 0.78 (significant, large effect, learned worse)
+- global vs oracle: U = 98.0, p ~ 0.0003, r ~ 0.81 (significant, large effect)
 
-cost_saved_usd is nearly identical across all three lambda_source values because
-cost_saved only counts non-stale hits, and with the exact-match index the entries that
-hit at all are overwhelmingly the same small set of frequently-repeated canonical
-queries regardless of which gate threshold rejected the intervening stale copies -- the
-gate changes which repeats get served versus regenerated, not which queries hit in the
-first place. lambda_source therefore mostly redistributes hits between "served fresh"
-and "served stale" rather than changing the hit set itself, which is why the headline
-signal is entirely in stale_hit_rate and not in cost_saved_usd.
+cost_saved_usd is close across all three lambda_source values (14.86-15.51), a smaller
+relative spread than stale_hit_rate's, for the same structural reason as before: it
+counts non-stale hits only, and the semantic index's very high hit rate under all three
+conditions means most of the movement between conditions shows up in which hits are
+stale rather than in how many hits occur at all.
+
+## Takeaway for the report
+
+The report's original framing -- "learned recovers close to the oracle rate, beating
+pooling by 4x" -- depended entirely on oracle-perfect cluster identity, which this
+project never actually exercised in any reported number until this rerun. With real
+clustering, that framing does not hold: learned performs like global, not like oracle.
+The honest finding is that per-cluster fitting only pays off if cluster identity is
+itself recoverable, and it is not recoverable from this workload's query text under a
+real embedder. This needs to be the report's central limitation, not a footnote.
