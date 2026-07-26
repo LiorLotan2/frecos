@@ -16,3 +16,4 @@ dependencies:
       - transformers==5.14.1
       - onnxruntime==1.28.0
       - huggingface_hub==1.24.0
+      - sqlalchemy==2.0.51

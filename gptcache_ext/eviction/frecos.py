@@ -1,8 +1,13 @@
 """FreCoS eviction policy: value = log(2+freq) * log(1+kappa*regen_cost) * exp(-lambda*age) / size.
 
-Registered as a real GPTCache EvictionBase subclass (see register() at the bottom) so it can
-be selected the same way stock policies are, but the scoring logic itself is plain Python and
-is what tests/test_frecos.py exercises directly.
+Selectable the same way stock policies are (policy="FRECOS") via register() at the bottom,
+which monkeypatches GPTCache's own EvictionBase.get() factory rather than registering a real
+subclass through any extension hook, because GPTCache's factory has none: eviction/manager.py's
+EvictionBase.get() is a hardcoded if/elif chain on the `name` argument (memory/redis/
+no_op_eviction), with no lookup table or plugin point a caller could add to. See
+tests/test_gptcache_integration.py for an end-to-end check against a real SSDataManager driven
+through this factory. The scoring logic itself is plain Python and is what tests/test_frecos.py
+exercises directly.
 
 The freq term uses log(2+freq), not the log(1+freq) in the original design note: at freq=0,
 log(1+0) is exactly 0 and zeroes the whole product regardless of cost, age, or size, so a
