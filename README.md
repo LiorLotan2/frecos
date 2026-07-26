@@ -109,22 +109,24 @@ is a runner module under `benchmarks/runners/`, a thin script over `harness.py` 
 writes its results CSV under `results/`. `make experiments` runs all seven in dependency
 order; each also has its own `make exp-*` target if you only want to rerun one.
 
-**Runtimes below are stale** (measured before the embedder-based clustering and
-semantic index were wired in) and are being remeasured against the current code; see
-`CHANGES.md` for the up-to-date numbers once that rerun completes. Every runner now
-also embeds each distinct query text once via the vendored ONNX model (cached to disk
-under `.embedding_cache/`, gitignored, keyed by text hash), which dominates first-run
-wall-clock; reruns against a warm cache are much faster.
+Every runner now also embeds each distinct query text once via the vendored ONNX
+model (cached to disk under `.embedding_cache/`, gitignored, keyed by text hash),
+which dominates first-run wall-clock; a later experiment that reuses trace texts an
+earlier one already embedded is far faster than the numbers below suggest, since it
+hits a warm cache. Runtimes below are first-run, cold-cache, measured end to end on
+the machine recorded in each experiment's `env.json` (Apple M2 Pro, macOS); a
+from-scratch `make experiments` run on the same machine took just under 9 hours in
+total, almost all of it embedding.
 
-| Command | Output CSV | Report table/figure |
-|---|---|---|
-| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` |
-| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` |
-| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) |
-| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) |
-| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` |
-| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` |
-| `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Discussion §5.3 (gate-off cost-aware eviction test) |
+| Command | Output CSV | Report table/figure | First-run wall-clock |
+|---|---|---|---|
+| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` | ~1h 12m |
+| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` | ~5m |
+| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) | ~9m |
+| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) | ~3m |
+| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` | ~1h 13m |
+| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` | ~5h 41m (cluster_k varies n_clusters, which changes the trace's canonical-query text and so cannot reuse most of the embedding cache the other experiments built) |
+| `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Discussion §5.3 (gate-off cost-aware eviction test) | ~3m (fully warm cache) |
 
 `make experiments` runs all seven sequentially. (An earlier eighth runner,
 `benchmarks/runners/size_term_isolation.py`, was removed after its own finding -- the

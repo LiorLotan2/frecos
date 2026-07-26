@@ -1,9 +1,11 @@
 """Figure 1: stale-hit-rate by ablation row, the headline figure.
 
-Rows 1-6 from results/ablation/results.csv. Per the plan, the comparison of
+Rows 1-5 from results/ablation/results.csv. Per the plan, the comparison of
 record is row 2 (LFU), not row 1 (LRU): Biton & Friedman's own finding is
 that LRU is a weak baseline on semantic workloads, so grading against it
-would flatter every other row trivially.
+would flatter every other row trivially. (A sixth row, FreCoS without the
+size-normalization term, was dropped after that term was removed from Eq. 1
+entirely - see gptcache_ext/eviction/frecos.py's module docstring.)
 """
 from common import load_csv, group_values, bootstrap_median_ci, new_figure, save_figure, REPO_ROOT
 
@@ -13,7 +15,6 @@ ROW_ORDER = [
     "ablation-w1-row3_bf",
     "ablation-w1-row4_gate_lfu",
     "ablation-w1-row5_gate_frecos",
-    "ablation-w1-row6_gate_frecos_nosize",
 ]
 ROW_LABELS = {
     "ablation-w1-row1_lru": "1 LRU (stock)",
@@ -21,7 +22,6 @@ ROW_LABELS = {
     "ablation-w1-row3_bf": "3 BF-sub",
     "ablation-w1-row4_gate_lfu": "4 gate+LFU",
     "ablation-w1-row5_gate_frecos": "5 gate+FreCoS",
-    "ablation-w1-row6_gate_frecos_nosize": "6 gate+FreCoS(no-size)",
 }
 FLOOR_ROW = "ablation-w1-row2_lfu"
 
