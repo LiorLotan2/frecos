@@ -31,6 +31,7 @@ from gptcache_ext.staleness.fitter import fit_staleness_table
 from gptcache_ext.staleness.gate import TTLGate
 from workloads.w1_synthetic.generator import generate_trace
 
+from benchmarks.capture_env import write_env_json
 from benchmarks.embedding_pipeline import SEMANTIC_THRESHOLD, get_shared_embedder, prepare_trace
 from benchmarks.harness import run_harness, write_csv_row
 from benchmarks.semantic_index import SemanticIndex
@@ -78,6 +79,7 @@ def run_one(cache_size_entries, ttl_confidence, n_clusters, seed, run_id_prefix)
 
 def run_sweep(axis_name, points, point_to_kwargs, results_dir):
     os.makedirs(results_dir, exist_ok=True)
+    write_env_json(results_dir)
     results_csv = os.path.join(results_dir, "results.csv")
     if os.path.exists(results_csv):
         os.remove(results_csv)

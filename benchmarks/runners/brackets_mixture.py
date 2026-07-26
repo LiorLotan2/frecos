@@ -26,6 +26,7 @@ from gptcache_ext.staleness.gate import TTLGate
 from workloads.w1_synthetic.generator import cluster_params, generate_trace
 
 from benchmarks.embedding_pipeline import SEMANTIC_THRESHOLD, get_shared_embedder, prepare_trace
+from benchmarks.capture_env import write_env_json
 from benchmarks.harness import run_harness, write_csv_row
 from benchmarks.semantic_index import SemanticIndex
 
@@ -88,6 +89,7 @@ def run_one(lambda_source, seed):
 
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    write_env_json(RESULTS_DIR)
     if os.path.exists(RESULTS_CSV):
         os.remove(RESULTS_CSV)
 
