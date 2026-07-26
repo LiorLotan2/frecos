@@ -1,8 +1,7 @@
 # Related work
 
-Reference notes for the report's Introduction and Discussion. Collects the full positioning
-from `frecos-design-v2.md` §3.3 in prose form, per work, so a later drafting pass can lift
-paragraphs directly rather than re-deriving the framing. arXiv IDs are kept exact throughout.
+Reference notes for the report's Introduction and Discussion. arXiv IDs are kept exact
+throughout.
 
 ## Biton & Friedman, "From Exact Hits to Close Enough" (arXiv:2603.03301, Feb 2026)
 
@@ -91,8 +90,7 @@ literature; it does not compete with FreCoS's eviction value function or stalene
 
 An admission-control policy, not an eviction policy: it decides whether a new entry is worth
 admitting at all, using a frequency sketch, before eviction is ever invoked. It is explicitly
-out of scope for this project (`frecos-design-v2.md` §3.4) — porting it would be an
-engineering exercise with no research delta on the staleness or cost axes this project is
-about — and is listed as grounded future work rather than a comparator, since adding
-admission control on top of FreCoS's eviction and gate would be a separate axis of
-improvement, not a replacement for either.
+out of scope for this project — porting it would be an engineering exercise with no research
+delta on the staleness or cost axes this project is about — and is listed as grounded future
+work rather than a comparator, since adding admission control on top of FreCoS's eviction
+and gate would be a separate axis of improvement, not a replacement for either.

@@ -9,19 +9,21 @@ eviction. It is a course project built on top of a pinned GPTCache fork; see
 
 - `vendor/gptcache/` - pinned GPTCache source, read-only after import.
 - `gptcache_ext/` - the extension package (pipeline, staleness model, eviction).
-- `workloads/` - trace generators (synthetic and Wikipedia-derived).
+- `workloads/` - the W1 synthetic trace generator; `w2_wikipedia/spike/` holds a
+  feasibility spike that was not carried forward (see "Reproducing the report's
+  experiments" below).
 - `benchmarks/` - the harness, metrics, and experiment runners.
 - `tests/` - unit tests, the reference oracle, and the invariant suite.
 - `docs/` - supporting write-ups (baseline source map, Wikipedia feasibility spike).
 - `report/` - the final report (LaTeX source and compiled PDF).
+- `results/`, `analysis/` - committed experiment output and figure regeneration.
 
 ## GPTCache baseline
 
 Vendored from https://github.com/zilliztech/GPTCache at commit
 `bae7ffeef774e762d9d4e60fce70be00011188a6` (tag `0.1.44`). See `vendor/gptcache/PIN.md`
 for what was trimmed and why. Every line reference to baseline behavior used in the
-design doc and report is re-verified against this commit in
-`docs/baseline-source-map.md`.
+report is re-verified against this commit in `docs/baseline-source-map.md`.
 
 Embedder: GPTCache's default ONNX model, `GPTCache/paraphrase-albert-onnx`
 (tokenizer `GPTCache/paraphrase-albert-small-v2`), CPU-only. Not substituted, since
@@ -50,8 +52,6 @@ make install
 make test
 ```
 
-`make bench-smoke` is currently a stub; the benchmark harness lands with agent card A7.
-
 ## Docker
 
 ```
@@ -61,7 +61,6 @@ docker run frecos
 
 This runs `make test` inside the container.
 
-<!-- BENCHMARK:A7 -->
 ## How to benchmark
 
 `benchmarks/harness.py` replays a trace (JSONL) through `gptcache_ext.pipeline.decide()`
@@ -93,4 +92,21 @@ To benchmark your own trace and config, call `benchmarks.harness.run_harness(tra
 config, seed, gate, eviction_policy, staleness_table)` with objects satisfying the
 `Gate`, `EvictionPolicy`, and `StalenessTable` protocols in `gptcache_ext/contracts.py`,
 then `benchmarks.harness.write_csv_row(row, path)` to append it to a results CSV.
-<!-- /BENCHMARK:A7 -->
+
+## Reproducing the report's experiments
+
+Section 5's experiments are separate from the smoke benchmark above:
+
+- `benchmarks/runners/` - one runner per experiment (bracketing, ablation, sweeps,
+  and the misspecification checks), each a thin script over `harness.py`.
+- `results/` - the committed CSV output of every run behind Section 5's tables.
+- `cd analysis && python3 make_figures.py` - regenerates every figure in the report
+  from the committed CSVs in one command; no figure is hand-edited.
+
+Table in `report/report.tex` Appendix B (`tab:appendix`) maps every artifact used in
+the report to its path in this repository.
+
+## License
+
+MIT, see `LICENSE`. Vendored GPTCache code under `vendor/gptcache/` retains its own
+MIT license (`vendor/gptcache/LICENSE`); see `vendor/gptcache/PIN.md` for provenance.

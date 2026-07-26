@@ -1,8 +1,7 @@
 # Baseline source map
 
-Verifies every claim in `frecos-design-v2.md` §2.2 against the pinned GPTCache commit.
-This file is the source of truth for line references; the design doc's numbers were
-written from an unpinned read and are superseded here.
+Verifies every claim about GPTCache's baseline behavior (Section 2.2 of the report)
+against the pinned GPTCache commit. This file is the source of truth for line references.
 
 Pinned commit: `bae7ffeef774e762d9d4e60fce70be00011188a6` (tag `0.1.44`, vendored at
 `vendor/gptcache/`).

@@ -1,7 +1,6 @@
 """Deterministic synthetic workload generator (W1) for FreCoS.
 
-Emits the trace schema frozen in implementation-plan.md section 2.3. Every query stream
-is one of four kinds:
+Emits a frozen trace schema. Every query stream is one of four kinds:
 
 - canonical: the first occurrence of a ground-truth answer in a cluster. Establishes the
   answer_id, half_life, and regen_cost that later paraphrases and repeats reference.
@@ -50,7 +49,7 @@ def cluster_params(n_clusters, rng):
     """Per-cluster ground-truth distributions for half-life (seconds) and regen_cost (USD).
 
     half_life ~ Exponential(scale=half_life_scale[c]); this is the same exponential
-    survival model the staleness fitter (A3) assumes, so oracle mode can recover it exactly.
+    survival model the staleness fitter assumes, so oracle mode can recover it exactly.
     regen_cost and size_bytes are independent per-cluster lognormals, ranges chosen to be
     plausible for hosted LLM inference (see docs/w1-calibration.md for the honesty caveat).
     """

@@ -9,6 +9,6 @@ class Config:
     eviction_policy: str = "LRU"
     cache_size_entries: int = 1000
     cluster_count_k: int = 10
-    ttl_confidence: float = 0.9
+    ttl_confidence: float = 0.95
     lambda_source: str = "none"  # one of: none, global, learned, oracle
     seed: int = 0

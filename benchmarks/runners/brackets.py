@@ -1,21 +1,21 @@
-"""A8 bracketing experiment: does a learned per-cluster staleness lambda land between the
+"""Bracketing experiment: does a learned per-cluster staleness lambda land between the
 global (pooled) and oracle (ground-truth) brackets on stale-hit-rate?
 
-Design (implementation-plan.md sec 4/A8, design-v2.md sec 5.3): W1 eval split, three
-lambda_source values (global, learned, oracle) crossed with 10 seeds each, gate enabled,
-FreCoS eviction, cache size fixed at one point. Everything else held constant except seed.
+Design: W1 eval split, three lambda_source values (global, learned, oracle) crossed with
+10 seeds each, gate enabled, FreCoS eviction, cache size fixed at one point. Everything
+else held constant except seed.
 
 Ten distinct traces, one per seed, not one trace replayed ten times. The pipeline is fully
 deterministic given a trace (eviction and the gate have no randomness of their own), so
 replaying the same trace ten times would produce byte-identical rows for every "seed" and
 there would be nothing to bootstrap over. Generating one fresh trace per seed is the only
-way the 10-seed design in the plan does anything.
+way a 10-seed design does anything.
 
 Cache size: n_queries=12000 with the generator's default stream fractions yields 6600
 distinct answer_ids (4200 canonical + 2400 longtail; paraphrases and repeats reuse existing
 answer_ids so they don't add to this count, and this count is deterministic given n_queries,
-independent of seed). 1650 entries is 25% of that, inside the 20-30% range this card asks
-for as a placeholder mid-sweep point ahead of A10's actual cache-size sweep.
+independent of seed). 1650 entries is 25% of that, inside the 20-30% range chosen as a
+placeholder mid-sweep point ahead of the actual cache-size sweep.
 """
 import os
 
