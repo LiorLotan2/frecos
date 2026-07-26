@@ -2,9 +2,9 @@
 same hit/miss decisions as stock GPTCache's own adapter path. This replays 10,000
 synthetic queries through both and asserts zero divergences.
 
-No real workload generator exists yet (that is A5's job). The stream here is a small,
-seeded, local helper: a mix of repeated and novel query strings, which is enough to
-exercise LRU eviction and exact-match hits/misses identically on both sides.
+This test does not use the W1 workload generator; the stream here is a small, seeded,
+local helper: a mix of repeated and novel query strings, which is enough to exercise
+LRU eviction and exact-match hits/misses identically on both sides.
 """
 import random
 from dataclasses import dataclass

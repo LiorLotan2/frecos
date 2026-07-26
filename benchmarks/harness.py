@@ -1,21 +1,21 @@
-"""Trace replay harness. Produces one results-CSV row (plan sec 2.4) per run.
+"""Trace replay harness. Produces one results-CSV row per run.
 
 No LLM is ever called here. This is a pure trace replayer: on a miss, the "response" is
 whatever answer_id the trace says was generated, at whatever regen_cost and size_bytes
 the trace recorded. This is a validity limitation, not an oversight, and the report's
-Experimental Setup must say so plainly (plan sec 2.5).
+Experimental Setup must say so plainly.
 
 Miss latency is simulated, not measured, since there is no LLM call to time. It is drawn
 from a log-normal scaled by size_bytes, seeded per (seed, query_id) so replay order never
 affects the result. This distribution is not fit to any real trace (that calibration is
-out of scope for this card, see A5); a later pass can swap it out once real numbers exist.
+out of scope here); a later pass can swap it out once real numbers exist.
 
 Hit latency and extension overhead (index lookup + gate check) are measured for real with
 time.perf_counter() around the actual decide() call.
 
 This harness's built-in index does exact-text-match lookup, the same stand-in used in
-tests/test_stock_parity.py. No embedding-based semantic index exists on main yet (that is
-A3/A5 territory), so paraphrase pairs in a trace will not hit here until a real index is
+tests/test_stock_parity.py. No embedding-based semantic index exists on main yet, so
+paraphrase pairs in a trace will not hit here until a real index is
 wired in later. Gate, eviction policy, and staleness table are supplied by the caller and
 only need to satisfy the Protocols in gptcache_ext.contracts.
 """
@@ -94,7 +94,7 @@ def _seeded_rng(seed: int, query_id: int) -> random.Random:
 
 def _simulate_miss_latency_ms(seed: int, query_id: int, size_bytes: int) -> float:
     """Placeholder distribution: log-normal, scaled by size_bytes. Not fit to any real
-    trace (Azure LLM Inference Trace calibration is A5's job, out of scope here)."""
+    trace (Azure LLM Inference Trace calibration is out of scope here)."""
     rng = _seeded_rng(seed, query_id)
     base_ms = rng.lognormvariate(mu=math.log(80.0), sigma=0.5)
     return base_ms * (1.0 + size_bytes / 2000.0)

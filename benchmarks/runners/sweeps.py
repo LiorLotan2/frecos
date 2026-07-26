@@ -1,17 +1,18 @@
-"""A10 parameter sweeps: cache size, TTL confidence, cluster count K.
+"""Parameter sweeps: cache size, TTL confidence, cluster count K.
 
-Design (implementation-plan.md sec 4/A10): three axes, one at a time, no full factorial.
-Full stack throughout (gate on, FreCoS eviction), 10 seeds per point, one fresh trace per
-seed for the same reason A8/A9 generate fresh traces rather than replaying one trace ten
-times -- the pipeline is deterministic given a trace, so a repeated trace would give
-byte-identical "seeds" and nothing to bootstrap over.
+Design: three axes, one at a time, no full factorial. Full stack throughout (gate on,
+FreCoS eviction), 10 seeds per point, one fresh trace per seed for the same reason the
+bracketing and ablation experiments generate fresh traces rather than replaying one
+trace ten times -- the pipeline is deterministic given a trace, so a repeated trace would
+give byte-identical "seeds" and nothing to bootstrap over.
 
 Fixed defaults, held constant on the two axes not being swept: cache_size_entries=1980
 (30% of the 6600-answer_id working set at n_queries=12000, n_clusters=10), ttl_confidence=
-0.9, cluster_count_k=10. These match A8's calibration choices except cache size, which A8
-put at 1650 (25%) as a placeholder ahead of this sweep; 1980 (30%) is inside the same
-plausible mid-range and is one of this sweep's own cache-size points, so the cache-size
-axis includes its own default rather than defining a fourth value nobody else uses.
+0.9, cluster_count_k=10. These match the bracketing experiment's calibration choices
+except cache size, which the bracketing experiment put at 1650 (25%) as a placeholder
+ahead of this sweep; 1980 (30%) is inside the same plausible mid-range and is one of this
+sweep's own cache-size points, so the cache-size axis includes its own default rather
+than defining a fourth value nobody else uses.
 
 Cache-size points: 330, 990, 1980, 3300, 5280 entries, i.e. 5%, 15%, 30%, 50%, 80% of the
 6600-entry working set, following the plan's own suggested spacing exactly.

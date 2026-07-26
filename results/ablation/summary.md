@@ -1,17 +1,18 @@
-# A9 ablation: gate, eviction, and size normalization
+# Ablation: gate, eviction, and size normalization
 
 ## Setup
 
-W1 eval split, 6 rows x 10 seeds = 60 runs, same trace generation as A8's brackets
+W1 eval split, 6 rows x 10 seeds = 60 runs, same trace generation as the bracketing
 experiment: `generate_trace(n_tenants=5, n_clusters=10, n_queries=12000, seed=seed)`, ten
 distinct traces (one per seed), cache_size_entries=1650, ttl_confidence=0.9,
-cluster_count_k=10. As in A8, one fresh trace per seed rather than one trace replayed
-ten times: the pipeline has no randomness of its own given a fixed trace, so a single
-trace would give ten identical rows per row and nothing to bootstrap over.
+cluster_count_k=10. As in the bracketing experiment, one fresh trace per seed rather than
+one trace replayed ten times: the pipeline has no randomness of its own given a fixed
+trace, so a single trace would give ten identical rows per row and nothing to bootstrap
+over.
 
 Verified rather than assumed: n_queries=12000 still yields 6600 distinct answer_ids
-(4200 canonical + 2400 longtail), so 1650 is still exactly 25% and inside A8's
-20-30% band. ablation.py asserts this on seed 0's trace at runtime.
+(4200 canonical + 2400 longtail), so 1650 is still exactly 25% and inside the bracketing
+experiment's 20-30% band. ablation.py asserts this on seed 0's trace at runtime.
 
 Rows:
 
@@ -25,11 +26,11 @@ Rows:
 | 6 | on (TTLGate, learned) | FreCoS(no_size=True) | size normalization ablation |
 
 Gate-on rows fit the staleness table with fit_staleness_table(trace, mode="learned",
-confidence=0.9), same as A8. Row 3's eviction policy is
+confidence=0.9), same as the bracketing experiment. Row 3's eviction policy is
 gptcache_ext.eviction.baselines.BitonFriedmanSubstituteEviction, a documented
 LFU-with-cost-tiebreak substitute (value = freq / regen_cost), not their released
 code: it wasn't reachable in this build environment (no network access to fetch it),
-per the A4 card's fallback instruction. Any claim below about "the primary comparator"
+per the project's design fallback. Any claim below about "the primary comparator"
 inherits that caveat.
 
 results.csv has 60 rows plus header, columns match benchmarks.harness.CSV_COLUMNS
@@ -37,7 +38,7 @@ exactly.
 
 ## Bootstrap method
 
-Same as A8: percentile bootstrap over the 10 per-seed values in each row, 10,000
+Same as the bracketing experiment: percentile bootstrap over the 10 per-seed values in each row, 10,000
 resamples with replacement (n=10 each), median of each resample, 95% CI from the 2.5th
 and 97.5th percentiles of the resulting distribution of medians. stdlib random,
 seeded 12345.
@@ -88,7 +89,7 @@ The gate rows (4, 5, 6) drop stale_hit_rate by roughly 15x relative to the floor
 hit_rate by about a third, in line with the design's stated trade-off: the gate
 converts stale hits into misses, which necessarily lowers hit rate. cost_saved_usd is
 essentially unchanged across all six rows (all in the 0.44-0.45 range) for the same
-reason A8 found: cost_saved only counts non-stale hits, and with the exact-match index
+reason the bracketing experiment found: cost_saved only counts non-stale hits, and with the exact-match index
 in this harness, the set of queries that hit at all is small and dominated by the same
 frequently-repeated canonical queries regardless of gate or eviction policy. The gate
 changes which repeats get served fresh versus regenerated; it does not change the hit
@@ -151,15 +152,15 @@ cost_saved_usd, all CIs overlapping heavily. At this cache size and workload, th
 term in value() isn't moving the needle either, for the same underlying reason as
 the decay term: eviction pressure among gate-protected entries in this trace doesn't
 differentiate much on any of FreCoS's four terms once staleness itself is off the
-table. A cache-size sweep at a tighter budget (A10) is a more informative place to
+table. A cache-size sweep at a tighter budget is a more informative place to
 look for the size term's effect than this ablation, since size normalization should
 matter more when eviction pressure is higher.
 
 ## Design decisions made here
 
-- Trace scale and cache size reused verbatim from A8 (12000 queries, 1650 entries)
-  rather than re-derived, per the brief's instruction to verify rather than
-  recompute if unchanged; verified via an in-code assertion on seed 0's trace.
+- Trace scale and cache size reused verbatim from the bracketing experiment (12000
+  queries, 1650 entries) rather than re-derived, per the instruction to verify rather
+  than recompute if unchanged; verified via an in-code assertion on seed 0's trace.
 - lambda_source is recorded as "learned" for gate-on rows and "none" for
   gate-off rows in the CSV, matching the field's stated meaning (the fitter mode
   actually used) rather than a placeholder value.

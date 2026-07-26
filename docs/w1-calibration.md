@@ -6,9 +6,9 @@ they were and were not checked against.
 
 ## What the plan asked for and what was actually done
 
-The implementation plan (section 4, card A5) calls for fitting regen_cost against the
-Azure LLM Inference Trace and half_life against update-frequency patterns observed in a
-public news or product-catalog corpus. Neither dataset was reachable in this environment:
+The original design called for fitting regen_cost against the Azure LLM Inference Trace
+and half_life against update-frequency patterns observed in a public news or
+product-catalog corpus. Neither dataset was reachable in this environment:
 there is no network access to download the Azure trace or a news/catalog corpus, and
 neither is bundled with the repository. Fitting against data that was never actually
 obtained would misrepresent the calibration, so this document does not claim that fit.

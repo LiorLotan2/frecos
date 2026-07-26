@@ -1,6 +1,6 @@
 """A small, fully deterministic trace and stub policy set used for the bench-smoke
-target, CI, and the sample CSV/JSON under benchmarks/samples/. This is not a workload
-generator (that's A5's job) - it is a fixed, hand-built trace just big enough to
+target, CI, and the sample CSV/JSON under benchmarks/samples/. This is not the W1 workload
+generator - it is a fixed, hand-built trace just big enough to
 exercise hits, misses, stale hits, and false hits through the harness.
 
 The gate is disabled here on purpose: stale_hit_rate is only interesting to report when

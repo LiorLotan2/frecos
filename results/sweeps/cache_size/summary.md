@@ -1,22 +1,23 @@
-# A10 cache-size sweep
+# Cache-size sweep
 
 ## Setup
 
 W1, gate enabled, FreCoS eviction, lambda_source=learned. Fixed defaults while sweeping
 cache size: ttl_confidence=0.9, cluster_count_k=10. n_queries=12000 with n_tenants=5,
-n_clusters=10, which (as in A8) yields exactly 6600 distinct answer_ids per trace
+n_clusters=10, which (as in the bracketing experiment) yields exactly 6600 distinct answer_ids per trace
 regardless of seed. Five cache-size points at 5%, 15%, 30%, 50%, 80% of that working set:
 330, 990, 1980, 3300, 5280 entries, following the plan's own suggested spacing exactly.
 
 Ten distinct traces per point (seeds 0-9), not one trace replayed ten times, for the same
-reason as A8/A9: the pipeline has no randomness of its own given a fixed trace, so a
-repeated trace would give ten identical rows and nothing to bootstrap over.
+reason as the bracketing and ablation experiments: the pipeline has no randomness of its
+own given a fixed trace, so a repeated trace would give ten identical rows and nothing to
+bootstrap over.
 
 50 rows in results.csv (5 points x 10 seeds), matching benchmarks.harness.CSV_COLUMNS.
 
 ## Bootstrap method
 
-Same as A8: simple percentile bootstrap over the 10 per-seed values at each cache-size
+Same as the bracketing experiment: simple percentile bootstrap over the 10 per-seed values at each cache-size
 point. 10,000 resamples with replacement (n=10), median of each resample, 95% CI read off
 the 2.5th/97.5th percentiles of the resulting distribution. Python stdlib random, seeded
 12345.
@@ -65,8 +66,8 @@ working set) is the knee** -- the last point where an additional 990-entry incre
 bought any measurable hit-rate improvement (0.000463) at all. Beyond it, tripling the
 cache to 5280 buys nothing.
 
-This should be read together with the exact-match index limitation noted in A8/A9's
-summaries: with only literal repeats able to hit (no semantic index wired in yet), the hit
+This should be read together with the exact-match index limitation noted in the
+bracketing and ablation summaries: with only literal repeats able to hit (no semantic index wired in yet), the hit
 set is small and saturates fast. A semantic index would likely push the knee to a larger
 cache size, since paraphrase and repeat traffic that currently misses would start
 contending for cache slots.

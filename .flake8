@@ -5,3 +5,5 @@ exclude = vendor
 # hand-aligned formatting is intentional and not to be reflowed.
 per-file-ignores =
     gptcache_ext/contracts.py:E221,E301,E302
+    # Hand-labeled case data with long free-text justification strings.
+    workloads/w2_wikipedia/spike/hand_labels.py:E501

@@ -1,4 +1,4 @@
-# A10 TTL-confidence sweep
+# TTL-confidence sweep
 
 ## Setup
 
@@ -15,7 +15,7 @@ Ten distinct traces per point (seeds 0-9), same rationale as the other two sweep
 
 ## Bootstrap method
 
-Same as A8/cache_size: percentile bootstrap over the 10 per-seed values per point, 10,000
+Same as the bracketing experiment and the cache-size sweep: percentile bootstrap over the 10 per-seed values per point, 10,000
 resamples, median of each resample, 95% CI from the 2.5th/97.5th percentiles. Python
 stdlib random, seeded 12345.
 

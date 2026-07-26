@@ -10,7 +10,7 @@ range because the gate is converting stale hits into misses, which is the trade-
 working as designed, not a cost; useful-hit-rate (correct, non-stale hits over all scored
 queries) isolates the part of that decline that is a real loss of service.
 """
-from common import load_csv, group_values, bootstrap_median_ci, new_figure, save_figure, REPO_ROOT
+from common import load_csv, group_values, bootstrap_median_ci, save_figure, REPO_ROOT
 import matplotlib.pyplot as plt
 
 CONFIDENCES = ["0.8", "0.9", "0.95", "0.99"]

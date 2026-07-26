@@ -16,7 +16,7 @@ NOW = 1_700_000_000.0
 
 
 class FakeStalenessTable:
-    """Dict-backed StalenessTable stub for testing, independent of A3's real fitter."""
+    """Dict-backed StalenessTable stub for testing, independent of the real fitter."""
 
     def __init__(self, lambdas=None, default_lambda=1e-6):
         self._lambdas = lambdas or {}

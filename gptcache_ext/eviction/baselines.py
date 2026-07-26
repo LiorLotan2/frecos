@@ -3,8 +3,8 @@ substitute for Biton & Friedman's released policy (arXiv:2603.03301).
 
 Biton & Friedman's code was not reachable in this build environment: this repo has no
 network access to arXiv or GitHub, and a search of the repo and vendored GPTCache tree
-turned up no local copy or cached artifact of their release. Per the implementation plan's
-explicit instruction (§4/A4, risk register), the comparator is not silently dropped: this
+turned up no local copy or cached artifact of their release. Per the project's design, the
+comparator is not silently dropped: this
 module instead ships BitonFriedmanSubstituteEviction, a documented LFU-with-cost variant
 used in its place. Its formula and the reasoning behind it are in the class docstring below.
 This is a substitution, not a reproduction of their method, and any report referencing it

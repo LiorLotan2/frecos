@@ -1,4 +1,4 @@
-# A8 bracketing: global vs learned vs oracle lambda
+# Bracketing: global vs learned vs oracle lambda
 
 ## Verdict
 
@@ -29,7 +29,7 @@ downstream experiments care about -- that per-cluster fitting beats a single poo
 "learned sits at a visibly intermediate point between the two brackets" (no, at this
 calibration sample size). Recommend not treating this as the design doc's anticipated
 negative-result trigger for a full characterization pivot (design sec 5.5), but a lighter
-follow-up in A9/A10 checking whether the learned/oracle gap opens up at smaller
+follow-up (the ablation and sweep experiments) checking whether the learned/oracle gap opens up at smaller
 calibration sample sizes or under injected drift would be a reasonable thing to note as
 a limitation.
 
@@ -50,7 +50,7 @@ n_queries = 12000 per trace (n_tenants=5, n_clusters=10), which yields exactly 6
 distinct answer_ids regardless of seed (4200 canonical + 2400 longtail; paraphrase and
 repeat rows reuse existing answer_ids, so they don't add distinct ones). Cache size 1650
 entries is 25% of that, inside the 20-30% range this card asks for as a placeholder
-mid-point ahead of the real cache-size sweep in A10.
+mid-point ahead of the real cache-size sweep.
 
 oracle_lambdas were reconstructed per seed by calling np.random.default_rng(seed) then
 cluster_params(n_clusters, rng) -- the exact same first two lines generate_trace itself

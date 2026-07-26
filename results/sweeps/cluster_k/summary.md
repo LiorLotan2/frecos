@@ -1,4 +1,4 @@
-# A10 cluster-count-K sweep
+# Cluster-count-K sweep
 
 ## Setup
 

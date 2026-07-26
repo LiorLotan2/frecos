@@ -1,8 +1,7 @@
-"""A9 ablation experiment: isolate the contribution of the gate and of FreCoS eviction's
+"""Ablation experiment: isolate the contribution of the gate and of FreCoS eviction's
 value function, plus a size-normalization variant.
 
-Design (implementation-plan.md sec 4/A9, design-v2.md sec 3.2/5.2): W1 eval split, six
-rows crossed with 10 seeds each.
+Design: W1 eval split, six rows crossed with 10 seeds each.
 
 | Row | Gate | Eviction                     | Isolates                          |
 |-----|------|-------------------------------|------------------------------------|
@@ -17,7 +16,8 @@ Row 2 (LFU), not row 1 (LRU), is the comparison of record throughout: Biton & Fr
 own finding is that LRU is weak on semantic workloads, so an improvement over LRU alone
 isn't a result.
 
-Same trace generation and cache size as A8 (brackets.py): n_tenants=5, n_clusters=10,
+Same trace generation and cache size as the bracketing experiment (brackets.py):
+n_tenants=5, n_clusters=10,
 n_queries=12000, one fresh trace per seed (the pipeline is deterministic given a trace, so
 replaying one trace ten times would give ten identical rows and nothing to bootstrap
 over). cache_size_entries=1650, confirmed still 25% of the 6600 distinct answer_ids this
@@ -64,7 +64,7 @@ def verify_cache_size(trace):
     fraction = CACHE_SIZE_ENTRIES / distinct
     assert 0.20 <= fraction <= 0.30, (
         f"cache size {CACHE_SIZE_ENTRIES} is {fraction:.2%} of {distinct} distinct "
-        "answer_ids, outside the 20-30% band A8 used"
+        "answer_ids, outside the 20-30% band the bracketing experiment used"
     )
 
 

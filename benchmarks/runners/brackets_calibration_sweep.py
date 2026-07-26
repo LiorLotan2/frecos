@@ -1,7 +1,7 @@
-"""A8 follow-up: does the learned/oracle gap on stale-hit-rate open up when calibration
-data is scarcer?
+"""Bracketing follow-up: does the learned/oracle gap on stale-hit-rate open up when
+calibration data is scarcer?
 
-A8's original bracketing run (results/brackets/) used n_queries=12000, which gives every
+The original bracketing run (results/brackets/) used n_queries=12000, which gives every
 cluster 550-650 calibration observations, far above the fitter's n_obs>=30 fallback
 floor. At that sample size the per-cluster MLE recovers the true generator lambda almost
 exactly, so learned mode is statistically indistinguishable from oracle mode (Mann-Whitney
@@ -39,9 +39,10 @@ RESULTS_CSV = os.path.join(RESULTS_DIR, "results.csv")
 
 
 def oracle_lambdas_for_seed(seed):
-    """Same reconstruction trick A8 used: rng = np.random.default_rng(seed) then
-    cluster_params(n_clusters, rng) reproduces the exact draw generate_trace makes
-    before doing anything else. True lambda per cluster is 1/half_life_scale.
+    """Same reconstruction trick the original bracketing run used: rng =
+    np.random.default_rng(seed) then cluster_params(n_clusters, rng) reproduces the exact
+    draw generate_trace makes before doing anything else. True lambda per cluster is
+    1/half_life_scale.
     """
     rng = np.random.default_rng(seed)
     params = cluster_params(N_CLUSTERS, rng)
