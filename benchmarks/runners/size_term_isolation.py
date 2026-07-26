@@ -16,7 +16,9 @@ from gptcache_ext.staleness.fitter import fit_staleness_table
 from gptcache_ext.staleness.gate import TTLGate
 from workloads.w1_synthetic.generator import generate_trace
 
+from benchmarks.embedding_pipeline import SEMANTIC_THRESHOLD, get_shared_embedder, prepare_trace
 from benchmarks.harness import run_harness, write_csv_row
+from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
@@ -40,6 +42,7 @@ def run_one(row_name, no_size, seed):
     trace = generate_trace(
         n_tenants=N_TENANTS, n_clusters=N_CLUSTERS, n_queries=N_QUERIES, seed=seed
     )
+    cluster_ari = prepare_trace(trace, n_clusters=N_CLUSTERS, seed=seed)
     staleness_table = fit_staleness_table(trace, mode="learned", confidence=TTL_CONFIDENCE)
     gate = TTLGate(staleness_table)
     eviction_policy = FreCoSEviction(staleness_table, no_size=no_size)
@@ -52,10 +55,12 @@ def run_one(row_name, no_size, seed):
         lambda_source="learned",
         seed=seed,
     )
+    index = SemanticIndex(CACHE_SIZE_ENTRIES, eviction_policy, get_shared_embedder())
     run_id = f"ablation-w1-{row_name}-seed{seed}"
     return run_harness(
         trace, config, seed=seed, gate=gate, eviction_policy=eviction_policy,
         staleness_table=staleness_table, workload="w1", run_id=run_id,
+        index=index, threshold=SEMANTIC_THRESHOLD, cluster_ari=cluster_ari,
     )
 
 

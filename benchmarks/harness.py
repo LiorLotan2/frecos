@@ -65,6 +65,7 @@ CSV_COLUMNS = [
     "cost_saved_usd", "cost_spent_usd",
     "latency_mean_ms", "latency_p50_ms", "latency_p95_ms", "latency_p99_ms",
     "throughput_qps", "overhead_mean_ms", "peak_rss_mb", "cpu_pct",
+    "cluster_ari",
     "git_sha", "timestamp",
 ]
 
@@ -120,6 +121,9 @@ class ExactMatchIndex:
 
     def contains(self, text: str) -> bool:
         return text in self._by_text
+
+    def text_for_entry_id(self, entry_id: int) -> str:
+        return self._entry_id_to_text[entry_id]
 
     def _current_metas(self) -> List[EntryMeta]:
         return list(self._by_text.values())
@@ -179,9 +183,16 @@ def _meta_kwargs_from_row(row: dict, freq: float = 0.0) -> dict:
     )
 
 
-def _replay(trace: Sequence[dict], config, seed: int, gate, eviction_policy, staleness_table):
+def _replay(
+    trace: Sequence[dict], config, seed: int, gate, eviction_policy, staleness_table,
+    index=None, threshold: float = INDEX_THRESHOLD,
+):
     """Replays the eval split of trace through decide(), applies the 10% warmup cut,
-    and returns the list of scored ServedQuery rows. Runs A2's invariant checks inline."""
+    and returns the list of scored ServedQuery rows. Runs the invariant checks inline.
+
+    index: an already-constructed Index (e.g. benchmarks.semantic_index.SemanticIndex);
+    defaults to a fresh ExactMatchIndex when not supplied, preserving every existing
+    caller's behavior unchanged."""
     check_no_valid_until_leak()
     # NullGate (gate_enabled=False) is a no-op by design and would fail this
     # regression check trivially, so it only applies when a real staleness gate
@@ -193,18 +204,23 @@ def _replay(trace: Sequence[dict], config, seed: int, gate, eviction_policy, sta
     n_warmup = math.ceil(len(eval_rows) * WARMUP_FRACTION)
     warmup_rows, scored_source_rows = eval_rows[:n_warmup], eval_rows[n_warmup:]
 
-    index = ExactMatchIndex(config.cache_size_entries, eviction_policy)
+    if index is None:
+        index = ExactMatchIndex(config.cache_size_entries, eviction_policy)
     scored: List[ServedQuery] = []
 
     def process(row: dict, record: bool) -> Optional[ServedQuery]:
         start = time.perf_counter()
         decision, meta = decide(
-            row["text"], index, threshold=INDEX_THRESHOLD, gate=gate, now=row["t"]
+            row["text"], index, threshold=threshold, gate=gate, now=row["t"]
         )
         overhead_ms = (time.perf_counter() - start) * 1000.0
 
         if decision == Decision.HIT:
-            index.bump_freq(row["text"])
+            # The matched entry's own storage key, not row["text"]: a semantic index
+            # can match a paraphrase to a different cached text, so the two are not
+            # interchangeable the way they are under exact-match lookup.
+            matched_text = index.text_for_entry_id(meta.entry_id)
+            index.bump_freq(matched_text)
             latency_ms = overhead_ms
             served_answer_id = meta.answer_id
             served_valid_until = meta.valid_until
@@ -216,7 +232,11 @@ def _replay(trace: Sequence[dict], config, seed: int, gate, eviction_policy, sta
             served_valid_until = float("inf")
             regen_cost = row["regen_cost"]
             if decision == Decision.MISS_STALE:
-                index.refresh(row["text"], _meta_kwargs_from_row(row), now=row["t"])
+                # meta is the stale candidate the gate rejected; refresh it in place
+                # under its own key, which may differ from row["text"] under a
+                # semantic index.
+                stale_text = index.text_for_entry_id(meta.entry_id)
+                index.refresh(stale_text, _meta_kwargs_from_row(row), now=row["t"])
             elif not index.contains(row["text"]):
                 index.insert(row["text"], _meta_kwargs_from_row(row), now=row["t"])
 
@@ -254,6 +274,9 @@ def run_harness(
     staleness_table: Any,
     workload: str = "w1",
     run_id: Optional[str] = None,
+    index: Any = None,
+    threshold: float = INDEX_THRESHOLD,
+    cluster_ari: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Replays trace through the pipeline and returns one plan-sec-2.4 row.
 
@@ -261,12 +284,22 @@ def run_harness(
     config: a gptcache_ext.config.Config.
     gate, eviction_policy, staleness_table: objects satisfying the matching Protocols
         in gptcache_ext.contracts. This module never imports concrete implementations.
+    index, threshold: optional Index override (e.g. benchmarks.semantic_index.
+        SemanticIndex) and its matching similarity threshold; default to a fresh
+        ExactMatchIndex at the exact-match threshold, preserving prior behavior.
+    cluster_ari: adjusted Rand index between the true and learned cluster labels for
+        this trace, when gptcache_ext.staleness.assign_real_clusters.assign_real_clusters
+        was used upstream; None when the caller still uses the generator's oracle
+        cluster_id directly (recorded as an empty CSV cell, never a placeholder value).
     """
     process = psutil.Process()
     rss_before = process.memory_info().rss
     process.cpu_percent(interval=None)  # primes the internal counter
 
-    scored = _replay(trace, config, seed, gate, eviction_policy, staleness_table)
+    scored = _replay(
+        trace, config, seed, gate, eviction_policy, staleness_table,
+        index=index, threshold=threshold,
+    )
 
     cpu_pct = process.cpu_percent(interval=None)
     rss_after = process.memory_info().rss
@@ -314,6 +347,7 @@ def run_harness(
         "overhead_mean_ms": overhead_mean_ms(scored),
         "peak_rss_mb": peak_rss_mb,
         "cpu_pct": cpu_pct,
+        "cluster_ari": cluster_ari,
         "git_sha": _git_sha(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

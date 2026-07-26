@@ -13,3 +13,6 @@ dependencies:
       - pytest-benchmark==5.2.3
       - flake8==7.3.0
       - psutil==7.2.2
+      - transformers==5.14.1
+      - onnxruntime==1.28.0
+      - huggingface_hub==1.24.0
