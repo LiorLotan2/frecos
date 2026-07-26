@@ -10,8 +10,7 @@ eviction. It is a course project built on top of a pinned GPTCache fork; see
 - `vendor/gptcache/` - pinned GPTCache source, read-only after import.
 - `gptcache_ext/` - the extension package (pipeline, staleness model, eviction).
 - `workloads/` - the W1 synthetic trace generator; `w2_wikipedia/spike/` holds a
-  feasibility spike that was not carried forward (see "Reproducing the report's
-  experiments" below).
+  feasibility spike that was not carried forward (see "Reproducing the report" below).
 - `benchmarks/` - the harness, metrics, and experiment runners.
 - `tests/` - unit tests, the reference oracle, and the invariant suite.
 - `docs/` - supporting write-ups (baseline source map, Wikipedia feasibility spike).
@@ -46,6 +45,10 @@ source .venv/bin/activate
 make install
 ```
 
+Both paths install the exact same pinned versions (`requirements.txt`); `make install`
+runs `pip install -r requirements.txt` under the venv, and `environment.yml` pins
+the identical versions for conda.
+
 ## Running tests
 
 ```
@@ -59,7 +62,13 @@ docker build -t frecos .
 docker run frecos
 ```
 
-This runs `make test` inside the container.
+This runs `make verify` (tests + the smoke benchmark) inside the container. To
+reproduce the report's experiments or figures instead:
+
+```
+docker run frecos make experiments
+docker run frecos make figures
+```
 
 ## How to benchmark
 
@@ -93,15 +102,37 @@ config, seed, gate, eviction_policy, staleness_table)` with objects satisfying t
 `Gate`, `EvictionPolicy`, and `StalenessTable` protocols in `gptcache_ext/contracts.py`,
 then `benchmarks.harness.write_csv_row(row, path)` to append it to a results CSV.
 
-## Reproducing the report's experiments
+## Reproducing the report
 
-Section 5's experiments are separate from the smoke benchmark above:
+Section 5's experiments are separate from the smoke benchmark above. Each experiment
+is a runner module under `benchmarks/runners/`, a thin script over `harness.py` that
+writes its results CSV under `results/`. `make experiments` runs all seven in dependency
+order; each also has its own `make exp-*` target if you only want to rerun one.
 
-- `benchmarks/runners/` - one runner per experiment (bracketing, ablation, sweeps,
-  and the misspecification checks), each a thin script over `harness.py`.
-- `results/` - the committed CSV output of every run behind Section 5's tables.
-- `cd analysis && python3 make_figures.py` - regenerates every figure in the report
-  from the committed CSVs in one command; no figure is hand-edited.
+Runtimes below were measured on a single run of each target on the machine this branch
+was prepared on (Apple Silicon, macOS, one core saturated per run); wall-clock on CI or a
+different machine will differ, but the relative ordering (bracket-style, 12k-query
+experiments take minutes; small-trace or sweep experiments take seconds) should hold.
+
+| Command | Output CSV | Report table/figure | Measured runtime |
+|---|---|---|---|
+| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` | ~6m 35s |
+| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` | ~6m 45s |
+| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) | ~11s |
+| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) | ~6m 48s |
+| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` | ~6m 08s |
+| `make exp-size-term-isolation` | `results/ablation/size_term_isolation/results.csv` | Discussion §5.2 (size-term follow-up) | ~1m 09s |
+| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` | ~28m 05s |
+
+`make experiments` runs all seven sequentially (~56 minutes total on the machine above).
+
+`make figures` regenerates all four PNGs under `analysis/figures/` plus
+`analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is
+hand-edited). `make report` compiles `report/report.tex` to `report/report.pdf`
+(requires a local `pdflatex`, not installed in this environment by `make install`).
+
+`make experiments && make figures && make report`, run in that order from a clean
+clone, reproduces every artifact this report cites.
 
 Table in `report/report.tex` Appendix B (`tab:appendix`) maps every artifact used in
 the report to its path in this repository.

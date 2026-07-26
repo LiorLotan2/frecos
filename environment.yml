@@ -5,11 +5,11 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-      - numpy
-      - matplotlib
-      - cachetools
-      - requests
-      - pytest
-      - pytest-benchmark
-      - flake8
-      - psutil
+      - numpy==2.5.1
+      - matplotlib==3.11.1
+      - cachetools==7.1.6
+      - requests==2.34.2
+      - pytest==9.1.1
+      - pytest-benchmark==5.2.3
+      - flake8==7.3.0
+      - psutil==7.2.2
