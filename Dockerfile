@@ -5,10 +5,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends make \
     && rm -rf /var/lib/apt/lists/*
 
-COPY vendor/gptcache/requirements.txt vendor/gptcache/requirements.txt
-RUN pip install --no-cache-dir -r vendor/gptcache/requirements.txt \
-    pytest pytest-benchmark flake8 psutil
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["make", "test"]
+# Default: run the test suite and the smoke benchmark. To reproduce the report's
+# experiments and figures instead, override the command, e.g.:
+#   docker run frecos make experiments
+#   docker run frecos make figures
+CMD ["make", "verify"]

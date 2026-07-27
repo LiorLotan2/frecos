@@ -3,7 +3,7 @@
 The oracle (tests/oracle/reference_cache.py) checks staleness against the true
 valid_until on each entry. To make the real pipeline's gate comparable rather than a
 different question entirely, this test gives the gate the entry's true valid_until too
-(a stub, only-for-this-test gate, not the learned TTLGate that A3 owns) so both sides are
+(a stub, only-for-this-test gate, not the learned TTLGate) so both sides are
 answering "is this entry still valid at now", just through different code paths.
 """
 import random
