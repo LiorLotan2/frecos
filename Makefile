@@ -51,4 +51,4 @@ figures:
 	PYTHONPATH=vendor/gptcache:.:analysis $(PYTHON) analysis/make_figures.py
 
 report:
-	cd report && pdflatex -interaction=nonstopmode report.tex && pdflatex -interaction=nonstopmode report.tex
+	cd report && tectonic report.tex

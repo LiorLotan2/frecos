@@ -171,6 +171,43 @@ before trusting any of them.
   material, and further compression risked losing the reasoning that makes those
   findings verifiable rather than asserted.
 
+## Phase 5 — Second-review remediation
+
+- **Cost-aware eviction table/prose (Table `tab:costaware`) inverted its own finding:**
+  the caption and prose claimed FreCoS "beats LRU substantially on stale-hit-rate" and
+  that LRU "pays for its cost advantage with the highest stale-hit-rate"; the table
+  directly above states the opposite (LRU: 0.227, FreCoS: 0.491, LFU: 0.677 -- lower is
+  better) with no per-seed overlap between LRU and FreCoS. Fixed everywhere this appeared
+  (abstract, Section 5.3, Discussion, Conclusion): LRU strictly dominates FreCoS on this
+  test (more cost saved, fewer stale hits), because recency of access happens to track
+  recency of write on this trace, so LRU gets a freshness benefit for free with no
+  staleness model at all. FreCoS still beats the LFU floor on cost saved with a large
+  effect; that claim was correct and is unchanged.
+- **Clustering result reframed as a diagnosed measurement failure, not a negative
+  result:** the abstract, Introduction contribution #2, Discussion, and Conclusion
+  presented "per-cluster staleness learning does not beat pooling" as a finding. Root
+  cause (verified in `workloads/w1_synthetic/generator.py:213`): every canonical query
+  text differs across clusters only in two embedded integers, so a sentence embedder
+  cannot recover cluster identity from it at all (ARI 0.02--0.06, at random-assignment
+  level). The per-cluster learning this project set out to test was never actually
+  exercised under real clustering -- there were no real clusters to learn from -- so
+  "learned tracks global" measures the absence of clusters, not the value of per-cluster
+  learning. Reworded every instance to say this explicitly.
+- **`cost_saved_usd` noted as excluding stale hits but not false hits:** at this
+  workload's false-hit-rate (~92--97%), the reported cost-saved numbers are dominated by
+  hits that returned the wrong answer. Stated explicitly at the point of the claim
+  (Section 4) rather than silently left implied by the stale-hit-only exclusion. The
+  metric fix (also exclude `is_false_hit`) and the generator text fix (distinct topic
+  and entity phrases per cluster/answer, replacing the two-digit template) are both fully
+  specified but **not applied**: applying either would change every committed
+  `results/*/results.csv`, and rerunning the full suite is a multi-hour cost this pass
+  did not have room for (see Phase 3.1 above for the same constraint). Applying and
+  rerunning both together is the single highest-value next step, named as such in the
+  Conclusion.
+- **`make report`:** switched from `pdflatex` (not installed in this environment, so
+  untested here) to `tectonic`, verified to compile `report.tex` to a 16-page PDF with
+  only benign Overfull/Underfull hbox warnings.
+
 ## What was not fixed, and why
 
 - **Seed count (Phase 3.1):** left at 10, not raised to 30. See above — compute cost of

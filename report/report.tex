@@ -55,15 +55,20 @@ under real clustering, adjusted Rand index between the k-means-on-embeddings ass
 and the workload's true cluster labels is 0.02--0.06, barely above what a random
 assignment would produce, because this workload's canonical query text differs across
 clusters only in two embedded numbers and a general-purpose sentence embedder cannot
-recover cluster identity from that. As a direct consequence, per-cluster fitting no
-longer beats a single pooled rate (learned tracks global, not oracle, across every
-bracket-style experiment; Mann-Whitney $p$ in 0.65--0.94 against global, $p$ in
-0.0002--0.0005 against oracle, always with a large effect). What survives this change: the
+recover cluster identity from that. This is a diagnosed measurement failure, not a
+finding about per-cluster learning: with no clusters to recover, per-cluster fitting was
+never actually exercised, so I do not claim it fails to beat a pooled rate in general --
+only that this workload's text makes the comparison untestable as constructed, and that
+learned is indistinguishable from global under the clusters this harness actually
+produces (Mann-Whitney $p$ in 0.65--0.94 against global, $p$ in 0.0002--0.0005 against
+oracle, always with a large effect). What survives this change: the
 validity gate's own mechanism still works correctly regardless of whether the clusters
 feeding it are accurate, since the same wrong cluster is used consistently at calibration
 and serve time; and a fair test of FreCoS's cost-aware eviction term, run for the first
 time under conditions where eviction actually occurs, finds it beats a frequency floor on
-cost saved with a large, significant effect. The semantic index also reveals a false-hit
+cost saved with a large, significant effect, though plain LRU beats FreCoS on both cost
+saved and stale-hit-rate in the same test, since recency of access happens to track
+recency of write on this trace. The semantic index also reveals a false-hit
 problem the exact-match harness structurally could not: a real 0.8 cosine threshold on
 this workload's near-identical canonical query templates serves the wrong answer roughly
 97\% of the time a hit is served at all, which the report treats as a limitation on this
@@ -109,10 +114,12 @@ that literature, not against the weaker product baseline.
 This report makes three contributions. First, stale-hit-rate as a named, measured
 evaluation metric, and a semantic-index-based harness that finally exercises it under
 conditions closer to a real semantic cache than an oracle-cluster, exact-match one.
-Second, a negative result on per-cluster learning under real clustering: cluster
-identity recovered from query text by a general-purpose embedder is not accurate enough
-for the per-cluster fitting this project set out to test to outperform a single pooled
-rate, and I show why directly rather than asserting it. Third, a positive result on
+Second, a diagnosed measurement failure, not a negative result: cluster identity cannot
+be recovered from this workload's query text by a general-purpose embedder, so the
+per-cluster fitting this project set out to test was never actually exercised under real
+clustering, and I identify the exact root cause (the query template differs across
+clusters only in two embedded numbers) and the fix rather than reporting the untestable
+comparison as if it settled the question. Third, a positive result on
 cost-aware eviction: FreCoS's eviction term, given a fair test under conditions where
 eviction actually happens (which every earlier version of this experiment suite failed
 to arrange), measurably beats a frequency floor on cost saved. Section~2 justifies the
@@ -367,7 +374,12 @@ queries, that are both correct and non-stale: $(n_\text{hits} - n_\text{stale} -
 n_\text{false}) / n_\text{hits}$ (an earlier, all-queries definition breaks once
 false-hit-rate is large, since it can subtract more than $n_\text{hits}$ and go
 negative; per-hit is also the more honest question -- given a hit happened, was it worth
-anything). Cost saved sums regeneration cost over non-stale hits only. Adjusted Rand
+anything). Cost saved sums regeneration cost over non-stale hits only -- it does not
+also exclude false hits, so at this workload's false-hit-rate (roughly 92--97\%,
+Section~4) the reported cost-saved numbers are dominated by hits that returned the wrong
+answer; \texttt{cost\_saved\_usd} should be read as an upper bound, not as money actually
+saved by correct answers, until the metric is changed to exclude false hits too and every
+affected experiment is rerun. Adjusted Rand
 index (cluster\_ari), reported alongside every bracket-style result, measures how well
 the learned k-means-on-embeddings assignment matches the true cluster labels: 1.0 is a
 perfect match, 0.0 is what a random assignment produces in expectation.
@@ -643,8 +655,8 @@ eviction pressure throughout.
 \centering
 \caption{With real eviction pressure, FreCoS beats the LFU floor on cost saved with a
 large, significant effect -- the first result in this project where FreCoS's
-cost-awareness shows measurable work. LRU maximizes cost saved but at more than double
-FreCoS's stale-hit-rate.}
+cost-awareness shows measurable work. LRU strictly dominates FreCoS here: more cost
+saved and a lower stale-hit-rate, with no per-seed overlap on either metric.}
 \label{tab:costaware}
 \begin{tabular}{lccc}
 \toprule
@@ -658,18 +670,20 @@ LRU & 17.09 & (14.30, 21.06) & 0.227 \\
 \end{table}
 
 FreCoS vs.\ LFU on cost saved: $U=94.0$, $p\approx0.0009$, $r\approx0.74$ (significant,
-FreCoS higher). FreCoS vs.\ LRU: $U=11.0$, $p\approx0.0032$, $r\approx0.66$
-(significant, LRU higher). LRU maximizes cost saved because it evicts the
-least-recently-accessed entry regardless of cost or staleness, which happens to keep
-frequently-regenerated entries resident longer whenever recency and cost correlate in
-this trace -- but with no gate, LRU has no mechanism at all to avoid serving stale
-entries, and pays for its cost advantage with the highest stale-hit-rate of the three
-by a wide margin. FreCoS sits between LFU and LRU on cost saved while beating LRU
-substantially on stale-hit-rate, which is the trade-off its value function
-(freq $\times$ cost $\times$ freshness-decay) is designed to strike, and it beats the
-pure-frequency LFU floor on cost meaningfully. This is the first experiment in this
-project where FreCoS's eviction term shows a real, significant effect on the metric it
-was designed to move.
+FreCoS higher). FreCoS vs.\ LRU on cost saved: $U=11.0$, $p\approx0.0032$, $r\approx0.66$
+(significant, LRU higher). FreCoS vs.\ LRU on stale-hit-rate: LRU is lower with no
+per-seed overlap (LRU's worst seed, 0.326, still beats FreCoS's best, 0.460). LRU
+strictly dominates FreCoS on this test: it wins on both cost saved and stale-hit-rate.
+This is not because LRU has any staleness mechanism -- with no gate active it has none --
+but because on this trace, recency of access correlates with recency of write, so
+evicting the least-recently-accessed entry incidentally tends to evict the entry most
+likely to already be stale. Plain LRU gets a freshness benefit for free, with no
+staleness model, no calibration split, and no gate, which is a genuine challenge to this
+project's motivating premise that cost- and staleness-awareness are needed at all. What
+does hold up: FreCoS beats the pure-frequency LFU floor on cost saved with a large
+effect, which is the first experiment in this project where FreCoS's cost term shows a
+real, significant effect on the metric it was designed to move. It does not establish
+that FreCoS beats LRU, and the report does not claim otherwise.
 
 \subsection{Cache-size sweep and the correctness-efficiency trade-off}
 \label{ssec:sweeps}
@@ -750,24 +764,28 @@ false-hit-rate's decline at the same confidence level.}
 \section{Discussion}
 \label{sec:discussion}
 
-The central finding of this version of the report is negative, and it is the most
-important result in it: per-cluster staleness fitting, the contribution this project set
-out to test, does not beat a single pooled rate once cluster identity has to be
-recovered from query text by a real embedder rather than read off the workload
-generator's ground truth. Across every bracket-style experiment (the well-specified
+The central finding of this version of the report is a diagnosed measurement failure,
+and it is the most important result in it: cluster identity cannot be recovered from
+this workload's query text by a real embedder, so per-cluster staleness fitting, the
+contribution this project set out to test, was never actually exercised under real
+clustering, and the ARI numbers below do not license a claim about whether per-cluster
+learning helps in general. Across every bracket-style experiment (the well-specified
 bracket, a scarcer-calibration follow-up, a Weibull misspecification, and an adversarial
 two-rate mixture), learned is statistically indistinguishable from global and
 significantly worse than oracle, with a large effect every time (Sections
 \ref{sec:brackets}--\ref{ssec:misspec}). The reason is not calibration sample size or
 model misspecification, both of which I varied and found made no difference: it is that
 adjusted Rand index between the k-means-on-embeddings assignment and the true cluster
-labels is 0.02--0.06 across every experiment, close to what a random assignment produces.
-An earlier version of this project reported the opposite conclusion -- learned tracking
-oracle almost exactly and clearly beating global -- because every number in it was
-produced under oracle-perfect cluster identity, never under real clustering. That
+labels is 0.02--0.06 across every experiment, close to what a random assignment produces
+-- there were no real clusters for per-cluster learning to exploit, so "learned tracks
+global, not oracle" measures the absence of clusters, not the value of the learning
+step. An earlier version of this project reported the opposite conclusion -- learned
+tracking oracle almost exactly and clearly beating global -- because every number in it
+was produced under oracle-perfect cluster identity, never under real clustering. That
 earlier framing was not wrong given what it tested; it tested a question (does
 per-cluster maximum-likelihood estimation recover a rate well, given correct clusters)
-that turns out not to be the binding constraint on this system's real performance.
+that this remediation now shows is not yet answerable end to end, because the harness
+meant to supply real clusters cannot do so on this workload's text.
 
 What survives this reversal: the validity gate's own mechanism, a per-entry age check
 against a per-cluster TTL, still works correctly whether or not the cluster feeding it is
@@ -776,10 +794,15 @@ and serve time (Section~\ref{sec:ablation}). And FreCoS's cost-aware eviction te
 tested here for the first time under conditions where eviction actually happens rather
 than being starved by either an oversized cache or a gate that pre-filters everything
 worth evicting on, shows a real, significant effect on cost saved (Section~
-\ref{ssec:costaware}): it beats a frequency floor with a large effect, and trades some
-of LRU's raw cost-saving advantage for a much lower stale-hit-rate. This is a genuinely
-positive result, on the metric the term was designed to move, that no earlier version of
-this project's experiment suite actually tested for.
+\ref{ssec:costaware}): it beats a frequency floor with a large effect. This is a
+genuinely positive result, on the metric the term was designed to move, that no earlier
+version of this project's experiment suite actually tested for. It does not, however,
+beat plain LRU: LRU strictly dominates FreCoS in this same test, saving more cost while
+also serving fewer stale hits, because recency of access happens to correlate with
+recency of write on this trace, so LRU gets a freshness benefit for free with no
+staleness model at all. That is itself a finding worth taking seriously, since it is a
+direct challenge to the premise that cost- and staleness-awareness are needed on
+recency-correlated workloads (Section~\ref{ssec:costaware}).
 
 A second, related finding: this workload's construction cannot support a meaningful
 correctness evaluation once a real semantic index is used, for the same root cause as
@@ -819,19 +842,32 @@ closes the gap it was built for: it converts most stale hits into misses at a re
 measurable hit-rate cost, and works correctly even when the cluster identity feeding its
 TTL is inaccurate (Section~\ref{sec:ablation}). The per-cluster learning meant to sharpen
 that TTL beyond a hand-set global value does not deliver once cluster identity comes
-from real embeddings: learned tracks global, not oracle, everywhere tested, traced
-directly to clustering quality, not calibration or half-life distribution
-(Section~\ref{sec:discussion}). The eviction term's cost-awareness, previously reported as
-contributing nothing, shows real work once tested under conditions where eviction
-actually happens (Section~\ref{ssec:costaware}): it beats a frequency floor on cost saved
-with a large, significant effect. One mechanism is robust to a limitation this project
-did not originally anticipate; one contribution does not survive it; one negative result
-turns out to have been an artifact of never testing it fairly.
+from real embeddings, but this was never actually tested under real clustering: cluster
+identity itself could not be recovered from this workload's query text (ARI 0.02--0.06),
+so "learned tracks global, not oracle" is a diagnosed measurement failure, not a verdict
+on per-cluster learning (Section~\ref{sec:discussion}). The eviction term's
+cost-awareness, previously reported as contributing nothing, shows real work once tested
+under conditions where eviction actually happens (Section~\ref{ssec:costaware}): it beats
+a frequency floor on cost saved with a large, significant effect, though plain LRU beats
+it on both cost saved and stale-hit-rate on this trace, since recency of access happens
+to track recency of write here -- a genuine challenge to the premise that cost- and
+staleness-awareness earn their complexity on workloads with that property. One mechanism
+is robust to a limitation this project did not originally anticipate; one contribution
+was never actually put to the test its own harness intended; one comparator turned out to
+win by an unmodeled property of the trace, not by having any staleness mechanism at all.
 
 The most consequential next step is redesigning W1's query text so cluster and answer
 identity are recoverable from a real embedder, not just a generator's internal label --
 the current template's reliance on embedded numbers alone breaks both clustering and the
-semantic index, from the same root cause. Running Biton and Friedman's policy and
+semantic index, from the same root cause. This fix is fully specified (a distinct topic phrase per cluster, a distinct entity
+phrase per answer\_id, replacing the two-number template in
+\texttt{workloads/w1\_synthetic/generator.py}'s canonical-text line) but not yet applied
+or run through the full experiment suite: the Phase 2 rerun that produced this version's
+numbers already took just under 9 hours, and changing the generator would require
+rerunning every experiment against new committed CSVs to keep the report and the data
+consistent, which is future work, not a result claimed here. The same applies to excluding false hits from
+\texttt{cost\_saved\_usd} (Section~4): the metric change is prepared, not yet rerun.
+Running Biton and Friedman's policy and
 Cortex's LCFU directly would close the comparator gap now that a real index exists to
 run them against. Calibrating the generator against a real inference trace would
 strengthen external validity. Breaking the circularity between stale-hit-rate and its
