@@ -2,52 +2,52 @@
 
 ## Verdict
 
-Rerun with real embedder-based clustering and a semantic index. Same pattern as every
-other bracket-style experiment in this rerun: learned tracks global (p ~ 0.82,
-indistinguishable), not oracle (p ~ 0.0002, r ~ 0.85). The Weibull misspecification
-this run was designed to test (an easier-than-exponential half-life distribution) is
-now a second-order effect: the dominant factor is clustering quality (cluster_ari ~
-0.041, in the same low range as every other experiment), which the half-life
-distribution shape does not touch at all. cluster identity is determined entirely by
-the query-text embedding step, upstream of and independent from how half_life is drawn.
+Rerun with the generator text fix (see results/brackets/summary.md for the root cause
+and fix). Median cluster_ari is 0.42, matching the main bracketing rerun. The pattern
+matches the main bracketing run: learned (median stale_hit_rate 0.024) is lower than
+global (0.033) with a large effect, though not significant at n=5 (p ~ 0.175, r ~ -0.52
+-- the direction and magnitude match the main run, but 5 seeds gives this comparison
+less power); learned is significantly below oracle (0.003, p ~ 0.028, r ~ 0.84,
+learned worse than the ceiling, as expected). The Weibull misspecification this run
+was designed to test (an easier-than-exponential half-life distribution) remains a
+second-order effect relative to clustering quality, same conclusion as the pre-fix
+version of this experiment, now on a workload where clustering actually works.
 
 ## Setup
 
 Same design as the main bracketing experiment: W1 eval split, gate enabled, FreCoS
-eviction, cache_size_entries=1650, ttl_confidence=0.9, cluster_count_k=10, three
-lambda_source values x 10 seeds. The only design change from the main run:
+eviction, cache_size_entries=412, ttl_confidence=0.9, cluster_count_k=10, three
+lambda_source values x 5 seeds. The only design change from the main run:
 `generate_trace(..., half_life_shape=2.0)` draws each cluster's true half-life from a
-Weibull distribution with the same mean scale as before but shape 2. Real clustering
-(gptcache_ext.staleness.assign_real_clusters) and benchmarks.semantic_index.SemanticIndex
-(0.8 threshold) replace the prior oracle-cluster + exact-match setup.
+Weibull distribution with the same mean scale as before but shape 2. n_queries=3000
+and 5 seeds, matching the reduced-scale rerun this experiment shares with brackets.py.
 
 ## Bootstrap method
 
-Percentile bootstrap over the 10 per-seed values in each lambda_source group, 10,000
+Percentile bootstrap over the 5 per-seed values in each lambda_source group, 10,000
 resamples, median of each resample, 95% CI from the 2.5th/97.5th percentiles. Python
 stdlib random, seeded 12345.
 
 ## Results
 
-| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | 95% CI | median n_hits | median false_hit_rate |
-|---|---|---|---|---|---|---|
-| global | 0.0270 | (0.0161, 0.0512) | 15.54 | (12.22, 18.39) | 4331.0 | 0.973 |
-| learned | 0.0282 | (0.0144, 0.0458) | 15.57 | (12.20, 18.18) | 4317.0 | 0.972 |
-| oracle | 0.0057 | (0.0046, 0.0076) | 16.01 | (12.39, 18.69) | 4305.5 | 0.973 |
+| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
+|---|---|---|---|---|---|
+| global | 0.0333 | (0.0209, 0.0925) | 2.12 | 0.419 | 0.902 |
+| learned | 0.0239 | (0.0071, 0.0611) | 1.93 | 0.419 | 0.920 |
+| oracle | 0.0031 | (0.0018, 0.0089) | 1.92 | 0.419 | 0.919 |
 
-Mann-Whitney U, stale_hit_rate:
+Mann-Whitney U, stale_hit_rate (analysis/stats.py, rank-biserial r = 2*U_a/(n1*n2)-1):
 
-- learned vs global: U = 47.0, p ~ 0.821, r ~ 0.05 (not significant)
-- learned vs oracle: U = 100.0, p ~ 0.0002, r ~ 0.85 (significant, large effect)
-- global vs oracle: U = 97.0, p ~ 0.0004, r ~ 0.79 (significant, large effect)
+- learned vs global: U_a=6.0, p ~ 0.175, r ~ -0.52 (not significant at n=5, large effect direction matches main run)
+- learned vs oracle: U_a=23.0, p ~ 0.028, r ~ 0.84 (significant, large effect)
+- global vs oracle: U_a=25.0, p ~ 0.009, r ~ 1.00 (significant, perfect separation)
 
 ## Takeaway for the report
 
-Under real clustering, the Weibull misspecification's original lesson (a
+Under the fixed generator, the Weibull misspecification's original lesson (a
 less-variable half-life distribution is easier to predict, so it under-tests the
-fitter) is subsumed by the clustering-quality finding: learned cannot approach oracle
-here regardless of how the half-life distribution is shaped, because the fitter is
-already operating on the wrong clusters before it ever sees a half-life sample. This
-result adds no new information beyond the main bracketing rerun and results/brackets/
-mixture/, which tests the harder adversarial case; it confirms the pattern is not
-specific to one half-life distribution.
+fitter) is visible again: absolute stale-hit-rate is lower here than the main
+well-specified bracket at every lambda_source, but the qualitative pattern -- learned
+below global, above oracle -- is the same, and cluster_ari (0.42) is unaffected by the
+half-life distribution's shape, as expected, since clustering is determined entirely by
+query text embeddings, upstream of and independent from how half_life is drawn.

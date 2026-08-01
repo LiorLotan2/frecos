@@ -29,7 +29,7 @@ def main():
     lo = [med[i] - main_stats[ORDER[i]][1] for i in range(3)]
     hi = [main_stats[ORDER[i]][2] - med[i] for i in range(3)]
     ax.errorbar(x, med, yerr=[lo, hi], fmt="o-", capsize=5, color="#2c3e50",
-                markersize=8, label="n_queries=12000 (main)")
+                markersize=8, label="n_queries=3000 (main)")
 
     x2 = [xi + 0.12 for xi in x]
     med2 = [calib_stats[k][0] for k in ORDER]

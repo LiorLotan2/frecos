@@ -44,6 +44,68 @@ LONGTAIL_TOPICS = [
     "country", "invention", "animal", "chemical", "instrument", "disease", "battle",
 ]
 
+# One distinct real-world subject per cluster_id (51 entries, cycled via modulo for
+# n_clusters > 51), so a sentence embedder has an actual semantic signal to separate
+# clusters on. The prior template ("topic {cluster_id}-{answer_id}") differed across
+# clusters only in a number, which a general-purpose embedder cannot use to recover
+# cluster identity (see CHANGES.md / the remediation review this fixes).
+CLUSTER_TOPICS = [
+    "the Amazon rainforest", "the Roman Empire", "quantum computing",
+    "the 1969 moon landing", "Bitcoin", "the human immune system",
+    "Renaissance art", "the Great Barrier Reef", "machine learning",
+    "the French Revolution", "black holes", "the printing press",
+    "coral reefs", "the Cold War", "solar panels", "the Ottoman Empire",
+    "genetic engineering", "the Industrial Revolution", "volcanic eruptions",
+    "the 1929 stock market crash", "Antarctic ice sheets", "the Berlin Wall",
+    "nuclear fusion", "the Silk Road", "electric vehicles",
+    "the Byzantine Empire", "deep-sea ecosystems", "the Gutenberg Bible",
+    "artificial intelligence ethics", "the Panama Canal", "medieval castles",
+    "the Human Genome Project", "the Suez Canal crisis", "dinosaur extinction",
+    "the Manhattan Project", "coral bleaching", "the fall of Constantinople",
+    "vaccine development", "the Wright brothers' first flight",
+    "the Great Wall of China", "cryptocurrency regulation",
+    "the Chernobyl disaster", "space tourism", "the invention of the telephone",
+    "urban heat islands", "the Maya civilization", "quantum entanglement",
+    "the transatlantic slave trade", "renewable energy storage",
+    "the assassination of Archduke Franz Ferdinand", "gene therapy",
+]
+
+# Two independent axes combined by (answer_id % len(ANSWER_ASPECTS), answer_id //
+# len(ANSWER_ASPECTS) % len(ANSWER_QUALIFIERS)) give 25*30=750 distinct phrases per
+# cluster -- comfortably above the largest per-cluster canonical-answer count this
+# generator produces (~420 at the historical 12000-query/10-cluster scale) -- so two
+# different answer_ids in the same cluster never collide on identical text. Colliding
+# text would make two distinct answers textually indistinguishable, which is a
+# duplicate-key artifact, not a modeling result, and would inflate false_hit_rate for
+# a reason unrelated to embedder or clustering quality.
+ANSWER_ASPECTS = [
+    "population trends", "funding history", "environmental impact",
+    "recent controversies", "economic significance", "technological advances",
+    "cultural influence", "current research directions", "policy debates",
+    "historical timeline", "public perception", "safety regulations",
+    "market impact", "scientific consensus", "international cooperation efforts",
+    "long-term projections", "notable case studies", "key milestones",
+    "expert opinions", "ongoing challenges", "regulatory oversight",
+    "media coverage", "academic debate", "public investment", "risk assessments",
+]
+
+ANSWER_QUALIFIERS = [
+    "this year", "over the last decade", "in the latest report",
+    "according to recent studies", "in the current climate", "this quarter",
+    "based on new evidence", "following recent developments",
+    "in light of new data", "as of the most recent review",
+    "under current policy", "given recent events", "in the near term",
+    "according to independent analysts", "in the wake of new findings",
+    "under the latest guidelines", "as reported this month",
+    "in ongoing discussions", "per the newest assessment",
+    "in the most recent cycle", "following the latest hearing",
+    "under revised estimates", "in the context of current trends",
+    "as of the last audit", "given the latest projections",
+    "in recent commentary", "under the updated framework",
+    "as of the most recent survey", "in light of ongoing debate",
+    "per the latest briefing",
+]
+
 
 def cluster_params(n_clusters, rng):
     """Per-cluster ground-truth distributions for half-life (seconds) and regen_cost (USD).
@@ -198,6 +260,11 @@ def generate_trace(
 
     for i in range(n_canonical):
         cluster_id = i % n_clusters
+        # position of this answer among its own cluster's canonicals (0, 1, 2, ...),
+        # not the global answer_id, since answer_id increments across every cluster
+        # and its stride mod n_clusters can alias back onto the same aspect index far
+        # sooner than the vocabulary actually repeats.
+        local_index = i // n_clusters
         answer_id = next_answer_id
         next_answer_id += 1
         t = float(canonical_times[i])
@@ -207,10 +274,17 @@ def generate_trace(
         regen_cost, size_bytes = draw_cost_and_size(params, cluster_id, rng)
         query_id = next_query_id
         next_query_id += 1
+        aspect = ANSWER_ASPECTS[local_index % len(ANSWER_ASPECTS)]
+        qualifier = ANSWER_QUALIFIERS[
+            (local_index // len(ANSWER_ASPECTS)) % len(ANSWER_QUALIFIERS)
+        ]
         row = {
             "t": t,
             "query_id": query_id,
-            "text": f"What is the current status of topic {cluster_id}-{answer_id}?",
+            "text": (
+                f"What is the current status of {aspect} "
+                f"for {CLUSTER_TOPICS[cluster_id % len(CLUSTER_TOPICS)]}, {qualifier}?"
+            ),
             "cluster_id": cluster_id,
             "answer_id": answer_id,
             "valid_until": t + half_life,

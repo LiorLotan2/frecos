@@ -246,20 +246,168 @@ against the grading rubric. Everything below was verified directly, not asserted
   twice; removing an unused bibliography entry (`squad2018`, never cited in the body);
   and tightening bibliography item spacing. No table, figure, or number was cut.
 
+## Phase 7 — Fixing the workload itself, and a third-review pass
+
+Triggered by a third external review of this branch. That review's central point:
+Phase 5's "diagnosed measurement failure" framing was honest but left the project's
+central mechanism (per-cluster staleness learning) never actually tested — the highest
+remaining value in the whole remediation was applying the generator fix already
+specified in Phase 5/6 and rerunning, not writing around it again. Everything below
+was verified directly (tests run, stats independently recomputed, figures regenerated
+and diffed), not asserted.
+
+- **P0 — fixed the generator text and reran every experiment.**
+  `workloads/w1_synthetic/generator.py`'s canonical query template
+  (`f"What is the current status of topic {cluster_id}-{answer_id}?"`) differed across
+  clusters only in two embedded integers, which no general-purpose embedder could use
+  to recover cluster identity (median `cluster_ari` 0.036 across every prior
+  experiment). Replaced with `CLUSTER_TOPICS` (51 distinct real-world subjects, one per
+  cluster, cycled past index 50) crossed with `ANSWER_ASPECTS` x `ANSWER_QUALIFIERS`
+  (25 x 30 = 750 combinations per cluster), keyed by each canonical answer's position
+  *within its own cluster* (not the global `answer_id`, whose stride mod `n_clusters`
+  would alias back onto the same vocabulary slot far sooner than the vocabulary itself
+  repeats). Verified empirically, not just by construction: `cluster_ari = 0.52` at
+  `n_queries=3000, seed=0` against the real ONNX embedder, and zero duplicate canonical
+  texts across 1650 answers at that scale. Added
+  `tests/test_w1.py::test_canonical_query_text_is_cluster_separable_under_a_real_embedder`,
+  asserting `cluster_ari > 0.5` on this exact configuration as a permanent regression
+  guard — this test downloads and runs the real ONNX embedder (network required on
+  first run, cached under `/tmp` after), the same requirement `benchmarks.
+  experiment_smoke` already has.
+
+  Reran all seven experiments behind Section 5, at 3,000 queries and 5 seeds instead of
+  12,000 and 10 (the brief's own suggested trade against the ~9-hour full-scale cost,
+  since the fix's thesis-level conclusion does not depend on trace size). Cache sizes,
+  where the original design chose them as a percentage of the answer-id working set,
+  were recomputed proportionally at the new scale (e.g. 412 = round(1650 * 0.25) for
+  brackets/ablation, replacing 1650 = round(6600 * 0.25); the cost-aware-eviction
+  experiment's cache size was re-derived empirically the same way the original did,
+  confirming 25 entries forces real eviction pressure at this scale). Median
+  `cluster_ari` across the rerun is 0.40--0.45, and the report's central finding
+  reverses again, this time correctly: learned beats global with a large, significant
+  effect ($r \approx -0.84$, $p \approx 0.028$ on the main bracket), and separates
+  significantly from oracle in the expected direction ($r \approx 0.92$) — the shape the
+  pre-Phase-2 report originally claimed, now backed by a workload a real embedder can
+  actually separate. `false_hit_rate` drops from ~0.97 to ~0.90--0.91, not eliminated:
+  direct inspection shows the residual is now same-cluster, different-aspect query
+  pairs (e.g. two distinct Renaissance-art questions) scoring 0.7--0.8 cosine
+  similarity, close to the SemanticIndex's 0.8 threshold — a more defensible failure
+  mode than the old cross-cluster conflation, but still a first-order caveat on every
+  number in Section 5.
+
+- **P0 — `benchmarks/experiment_smoke.py` now exercises the real path.** It called
+  `run_harness(...)` with no `index=`, silently defaulting to `ExactMatchIndex` and the
+  generator's oracle `cluster_id` — the ~1% exact-match hit-rate regime, never the real
+  50--95% band every committed result actually runs in. Now passes a real
+  `benchmarks.semantic_index.SemanticIndex` and `benchmarks.embedding_pipeline.
+  prepare_trace` (real k-means over embeddings), and asserts `hit_rate >= 0.20` to make
+  a silent fallback to the exact-match regime fail loudly rather than pass green.
+
+- **P1 — `analysis/fig3_cache_size.py`'s knee is now computed, not hardcoded.** The
+  module had `KNEE_SIZE = 1980` / "30% of working set" left over from before a rerun
+  had already moved the true knee to 990 / 15% — exactly the class of bug the module's
+  own docstring claimed was swept. Replaced with `find_knee()`, which reads the knee
+  directly off the same `results.csv` the plot itself renders (smallest cache size
+  whose median hit_rate is within 1% of every larger size's), so the annotation cannot
+  drift out of sync with the data again. At the new 3,000-query scale this computes
+  248 entries = 15% of the 1650-entry working set — the same proportion the pre-fix
+  15%-knee finding reported, a useful cross-check that the knee is a property of the
+  workload's answer-diversity structure, not of trace size.
+
+- **P1 — rank-biserial correlation, fixed and made regenerable.** `results/brackets/
+  summary.md` (and every effect size quoted from it in `report.tex`) defined
+  "rank-biserial r" as `|z|/sqrt(n1+n2)`, a different, z-based rank correlation, not
+  rank-biserial correlation (`r = 2*U_a/(n1*n2) - 1`), and discarding the sign of `z`
+  meant every effect size lost its direction. There was no committed script computing
+  either value — every prior U/p/r triple in this project was computed by hand and
+  re-typed, with nothing to rerun. Added `analysis/stats.py`
+  (`mann_whitney_u`, hand-rolled: scipy unavailable in this sandbox, same reason
+  `analysis/multiple_comparisons.py` and `gptcache_ext/staleness/cluster_accuracy.py`
+  hand-roll their own statistics), unit-tested against closed-form cases in
+  `tests/test_stats.py` (complete separation gives `r = ±1`; identical samples give
+  `r = 0`; ties handled via average-rank), and independently verified against this
+  project's own pre-fix committed data before trusting it for the rerun's numbers: for
+  `learned-vs-oracle` on the pre-fix `results/brackets/results.csv`, it recovers
+  `U=96.0`, `p≈0.0005` exactly, and `r=0.92` — matching the value flagged as correct by
+  the review that triggered this phase (report previously stated `r=0.78`). Every
+  rank-biserial number quoted in the rewritten `report.tex` and `results/*/summary.md`
+  now comes from this module.
+
+- **P1 — `useful_hit_rate` counted directly, not reconstructed.**
+  `analysis/fig4_ttl_tradeoff.py` computed `useful_fraction_of_hits` as
+  `n_hits - n_stale_hits_served - n_false_hits`, then clamped the result at
+  `max(..., 0)`. Root cause: `is_stale_hit` and `is_false_hit`
+  (`benchmarks/metrics.py`) are independent, overlapping predicates — a hit can be both
+  — so that subtraction double-counts the overlap and can go negative once both rates
+  are large, and the clamp made a genuinely floored value read as a measured zero.
+  Added `is_useful_hit` (a hit that is neither stale nor false) and `useful_hit_rate`
+  to `benchmarks/metrics.py`, wired `n_useful_hits`/`useful_hit_rate` into
+  `benchmarks.harness.CSV_COLUMNS` and every runner's output, and rewrote
+  `fig4_ttl_tradeoff.py` to read the column directly, removing the clamp entirely (it
+  is structurally unnecessary once the count is direct, not reconstructed). Added
+  hand-worked fixture tests in `tests/test_metrics.py`, including a case with a single
+  hit that is both stale and false, which the old formula would score as -1 and this
+  one correctly scores as 0. At the new scale, useful_hit_rate is a genuine,
+  non-clamped, monotonically-rising curve (0.04 at TTL confidence 0.80 to 0.46 at
+  0.99) — a different, more informative story than the pre-fix rerun's "zero through
+  confidence 0.90" finding, itself an artifact of false-hit-rate swamping the metric
+  before the generator fix.
+
+- **P1 — deleted `docs/report.md`.** 620 lines of the disowned pre-remediation report
+  ("roughly 15 times," "tracks an oracle rate closely," a six-row ablation), in the
+  same first-person voice as the current report, with no superseded banner and no
+  incoming references from any other committed file. `report/report.pdf` is the only
+  report artifact now.
+
+- **P1 — deleted the stale `phase-5/a12-report` branch from GitHub** (`origin/
+  phase-5/a12-report`, unrelated history to `main`/`main-reconciled`, carrying the old
+  15-page pre-remediation report). Left the equivalent local checkout untouched per
+  explicit instruction; only the remote ref was removed.
+
+- **P2 — documented the Python 3.10+ requirement.** `requirements.txt` pins
+  `numpy==2.2.6`, which has no wheels for Python <3.10; on a stock macOS `python3`
+  (verified against the system's actual 3.9.6), `pip install -r requirements.txt`
+  fails with a resolver error that never names numpy as the cause. Added a version
+  guard to `make install` (fails fast with an explicit message naming the actual
+  interpreter and version found, and how to point `PYTHON` at a newer one) and a README
+  note under Install. Verified the guard actually rejects Python 3.9.6 and accepts
+  3.13.
+
+- **P2 — documented `make figures`'s platform dependence.** The `figures-consistency`
+  CI job only passes on the Linux runner: regenerating on macOS, even with the exact
+  pinned `matplotlib` version, produces byte-different PNGs from the committed
+  Linux-rendered ones (font rasterization differs by platform) — verified directly by
+  running `make figures` on this machine and diffing. `analysis/figures/
+  supplementary.csv`, by contrast, reproduces byte-identically on macOS too, since it
+  has no font rendering involved; the README now states both facts side by side next
+  to the existing matplotlib-version warning, naming the stronger claim as stronger
+  rather than leaving the platform gap implicit.
+
+- **Not touched, and why:** the README's advertised runtimes for `make experiments`
+  (~9 hours cold-cache, dominated by embedding) were not independently re-timed against
+  a fully empty `.embedding_cache/`; every experiment in this rerun ran against the
+  same seven runners at reduced scale, and the surrounding pass had no room for a
+  second from-scratch full-scale timing run on top of the P0 rerun itself. Flagging
+  this as unverified rather than silently claiming it is now accurate at either scale.
+
 ## What was not fixed, and why
 
-- **Seed count (Phase 3.1):** left at 10, not raised to 30. See above — compute cost of
-  the Phase 2 rerun (~9 hours) made a further 3× rerun impractical within this session;
-  flagged rather than silently skipped.
-- **`results/ablation/size_term_isolation/`:** kept as a historical, no-longer-regenerable
-  artifact (its runner and the size term it tested no longer exist), documented as such
-  in the README and in `gptcache_ext/eviction/frecos.py`'s module docstring, per the
-  brief's instruction not to leave a stale number in place without saying so.
+- **Seed count:** every experiment in this rerun uses 5 seeds, not the original design's
+  10 (Phase 7's own scale reduction) nor the never-attempted 30 (Phase 3.1). Compute
+  cost of a from-scratch embedding-bound rerun at 12,000 queries and 10 seeds is still
+  roughly 9 hours; flagged in the report's Discussion and Conclusion as a named
+  statistical-power cost, not silently absorbed into the reported numbers.
+- **`cost_saved_usd` still does not exclude false hits.** The metric fix (also exclude
+  `is_false_hit`, not just `is_stale_hit`) remains fully specified (Phase 5) but not
+  applied, since `cost_saved_usd` already carries an explicit false-hit caveat in the
+  report and the change would touch every committed `results.csv` again on top of the
+  P0 rerun this phase already did.
+- **`results/ablation/size_term_isolation/`:** still kept as a historical,
+  no-longer-regenerable artifact, unchanged from Phase 2d.
 - **Biton and Friedman's released policy, and Cortex's LCFU:** still not run directly
-  against this workload (both were out of reach before this remediation and remain so);
-  the eviction axis is still measured only against count-based baselines and FreCoS.
-  Listed as future work in the Conclusion.
-- **External, non-self-authored ground truth for staleness:** still absent. The
-  Wikipedia feasibility spike's 40% rule-agreement result (against an 80% bar) predates
-  this remediation and was not revisited; the circularity this creates (Discussion, Phase
-  4 item 3) is now named explicitly rather than left implicit.
+  against this workload; the eviction axis is still measured only against count-based
+  baselines and FreCoS. Listed as future work in the Conclusion.
+- **External, non-self-authored ground truth for staleness:** still absent, unchanged
+  from Phase 4/5.
+- **README's ~9-hour cold-cache runtime claim for `make experiments`:** not re-timed
+  against an empty embedding cache in this pass (see above).

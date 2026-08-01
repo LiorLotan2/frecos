@@ -1,15 +1,19 @@
 """Figure 3: the correctness/efficiency trade-off as ttl_confidence varies.
 
 From results/sweeps/ttl_confidence/results.csv. Two stacked panels sharing an x-axis
-rather than one plot with dual y-axes: stale_hit_rate falls by roughly 18x over this
-range while useful-fraction-of-hits barely moves through 0.95, and independent axes on
-one plot would let the two curves visually "cross" at a scale that implies a false
-parity between them. Separate panels with independent, honestly-scaled y-axes avoid
-that. The lower panel plots useful-fraction-of-hits (correct, non-stale hits over hits
-served, not over all scored queries): with false_hit_rate now a large, real number under
-the semantic index, the all-scored-queries definition an earlier version of this figure
-used can go negative (it subtracts n_stale + n_false, which together can exceed n_hits),
-so this is scoped to hits served instead.
+rather than one plot with dual y-axes: stale_hit_rate and useful_hit_rate move on very
+different scales over this range, and independent axes on one plot would let the two
+curves visually "cross" at a scale that implies a false parity between them. Separate
+panels with independent, honestly-scaled y-axes avoid that.
+
+The lower panel plots useful_hit_rate directly from the harness (benchmarks.metrics.
+useful_hit_rate / is_useful_hit): the fraction of served hits that were both correct
+and fresh. An earlier version of this figure recomputed this as
+n_hits - n_stale_hits_served - n_false_hits, which double-subtracts once a hit can be
+both stale and false (is_stale_hit and is_false_hit are independent, overlapping
+predicates), and can go negative -- hidden by a max(..., 0) clamp that made the value
+read as measured zero rather than floored. Reading useful_hit_rate straight from the
+CSV avoids reconstructing a union from two possibly-overlapping counts at all.
 """
 from common import load_csv, group_values, bootstrap_median_ci, save_figure, REPO_ROOT
 import matplotlib.pyplot as plt
@@ -17,20 +21,10 @@ import matplotlib.pyplot as plt
 CONFIDENCES = ["0.8", "0.9", "0.95", "0.99"]
 
 
-def useful_fraction_of_hits(row):
-    n_hits = int(row["n_hits"])
-    if n_hits == 0:
-        return 0.0
-    n_useful = max(n_hits - int(row["n_stale_hits_served"]) - int(row["n_false_hits"]), 0)
-    return n_useful / n_hits
-
-
 def main():
     rows = load_csv(REPO_ROOT / "results/sweeps/ttl_confidence/results.csv")
     stale_groups = group_values(rows, lambda r: r["ttl_confidence"], "stale_hit_rate")
-    useful_groups = {}
-    for row in rows:
-        useful_groups.setdefault(row["ttl_confidence"], []).append(useful_fraction_of_hits(row))
+    useful_groups = group_values(rows, lambda r: r["ttl_confidence"], "useful_hit_rate")
 
     stale_stats = [bootstrap_median_ci(stale_groups[c]) for c in CONFIDENCES]
     useful_stats = [bootstrap_median_ci(useful_groups[c]) for c in CONFIDENCES]

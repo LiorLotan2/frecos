@@ -39,10 +39,12 @@ from benchmarks.metrics import (
     cost_spent_usd,
     false_hit_rate,
     hit_rate,
+    is_useful_hit,
     latency_stats,
     overhead_mean_ms,
     stale_hit_rate,
     throughput_qps,
+    useful_hit_rate,
 )
 
 # tests/ has no __init__.py but works as an implicit namespace package (PEP 420) as
@@ -60,8 +62,8 @@ CSV_COLUMNS = [
     "run_id", "workload", "policy", "gate_enabled", "lambda_source", "cache_size_entries",
     "cluster_count_k", "ttl_confidence", "seed", "split",
     "n_queries", "n_hits", "n_misses", "n_stale_hits_served", "n_stale_hits_prevented",
-    "n_false_hits",
-    "hit_rate", "stale_hit_rate", "false_hit_rate",
+    "n_false_hits", "n_useful_hits",
+    "hit_rate", "stale_hit_rate", "false_hit_rate", "useful_hit_rate",
     "cost_saved_usd", "cost_spent_usd",
     "latency_mean_ms", "latency_p50_ms", "latency_p95_ms", "latency_p99_ms",
     "throughput_qps", "overhead_mean_ms", "peak_rss_mb", "cpu_pct",
@@ -315,6 +317,7 @@ def run_harness(
         1 for r in scored
         if r.decision == Decision.HIT and r.served_answer_id != r.query_answer_id
     )
+    n_useful_hits = sum(1 for r in scored if is_useful_hit(r))
     latency_mean, latency_p50, latency_p95, latency_p99 = latency_stats(scored)
 
     return {
@@ -334,9 +337,11 @@ def run_harness(
         "n_stale_hits_served": n_stale_hits_served,
         "n_stale_hits_prevented": n_stale_hits_prevented,
         "n_false_hits": n_false_hits,
+        "n_useful_hits": n_useful_hits,
         "hit_rate": hit_rate(scored),
         "stale_hit_rate": stale_hit_rate(scored),
         "false_hit_rate": false_hit_rate(scored),
+        "useful_hit_rate": useful_hit_rate(scored),
         "cost_saved_usd": cost_saved_usd(scored),
         "cost_spent_usd": cost_spent_usd(scored),
         "latency_mean_ms": latency_mean,

@@ -12,9 +12,10 @@ cluster is unchanged, but the shape is not. The fitter still assumes exponential
 wrong by construction.
 
 Design is otherwise identical to brackets.py: same trace scale, same cache size, same three
-lambda_source values, ten seeds each. oracle_lambdas still uses 1/half_life_scale, the true
-mean rate, since that is the best a constant-hazard oracle can encode; the Weibull's shape
-parameter has no equivalent slot in this project's staleness table.
+lambda_source values, five seeds each (reduced-scale rerun, see brackets.py's docstring).
+oracle_lambdas still uses 1/half_life_scale, the true mean rate, since that is the best a
+constant-hazard oracle can encode; the Weibull's shape parameter has no equivalent slot in
+this project's staleness table.
 """
 import os
 
@@ -33,11 +34,11 @@ from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
-N_QUERIES = 12000
-CACHE_SIZE_ENTRIES = 1650
+N_QUERIES = 3000
+CACHE_SIZE_ENTRIES = 412
 TTL_CONFIDENCE = 0.9
 HALF_LIFE_SHAPE = 2.0
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 LAMBDA_SOURCES = ["global", "learned", "oracle"]
 
 RESULTS_DIR = os.path.join(

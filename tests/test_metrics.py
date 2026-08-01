@@ -18,6 +18,10 @@ false hits = rows 11, 12, 13 -> 3. false_hit_rate = 3/13
 non-stale hits (cost_saved counts these only) = rows 1-8, 11, 12 -> 10 rows.
 regen_cost is 0.01 on every row, so cost_saved = 10 * 0.01 = 0.10.
 cost_spent counts the 7 miss rows: 7 * 0.01 = 0.07.
+useful hits (neither stale nor false) = rows 1-8 only -> 8. useful_hit_rate = 8/13.
+Rows 9-10 are stale (excluded), 11-12 are false (excluded), 13 is both (excluded once,
+not twice) -- this fixture's row 13 is exactly the overlap case that a
+n_hits - n_stale - n_false reconstruction would double-subtract.
 """
 from gptcache_ext.contracts import Decision
 
@@ -28,6 +32,7 @@ from benchmarks.metrics import (
     false_hit_rate,
     hit_rate,
     stale_hit_rate,
+    useful_hit_rate,
 )
 
 SERVE_TIME = 1000.0
@@ -92,6 +97,17 @@ def test_stale_hit_rate_matches_hand_worked_value():
 
 def test_false_hit_rate_matches_hand_worked_value():
     assert false_hit_rate(build_fixture()) == 3 / 13
+
+
+def test_useful_hit_rate_matches_hand_worked_value():
+    assert useful_hit_rate(build_fixture()) == 8 / 13
+
+
+def test_useful_hit_rate_does_not_double_subtract_the_stale_and_false_overlap():
+    # A fixture with only one hit, both stale and false: n_hits - n_stale - n_false
+    # would compute 1 - 1 - 1 = -1, negative. is_useful_hit-based counting gives 0/1.
+    rows = [_hit(1, STALE_VALID_UNTIL, 2)]
+    assert useful_hit_rate(rows) == 0.0
 
 
 def test_cost_saved_matches_hand_worked_value():

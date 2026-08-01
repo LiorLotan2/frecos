@@ -2,54 +2,57 @@
 
 ## Verdict
 
-Rerun with real embedder-based clustering and a semantic index. The pattern matches the
-main bracketing rerun exactly: learned tracks global (p ~ 0.65, indistinguishable), not
-oracle (p ~ 0.0003, r ~ 0.81). Clustering quality, not calibration sample size, remains
-the bottleneck: cluster_ari here is ~0.055, essentially the same as the main run's
-~0.036, since both traces use the identical query-text template that a real embedder
-cannot separate by cluster (see results/brackets/summary.md for the direct evidence).
-The original question this follow-up asked -- does the learned/oracle gap open up with
-scarcer calibration data -- is moot under real clustering: the gap that matters here is
-learned-vs-oracle, and it is wide regardless of calibration sample size, because the
-clustering step upstream of calibration is where the information is lost.
+Rerun with the generator text fix (see results/brackets/summary.md). Median cluster_ari
+is 0.41, close to the main run's 0.42 -- clustering quality is essentially unaffected
+by trace size, as expected, since clustering is fit from query-text embeddings, not from
+the number of calibration observations per cluster. learned (median stale_hit_rate
+0.062) is significantly below global (0.110, p ~ 0.047, r ~ -0.76); learned is lower
+than oracle (0.041) but not significantly at n=5 (p ~ 0.076, r ~ 0.68). The
+learned-vs-global gap is if anything a bit clearer here than in the main 3000-query
+run, consistent with the original design intent of this follow-up (does the gap widen
+when calibration data is scarcer) -- though at n=5 seeds this is a suggestive
+difference in significance, not a strong claim about which scale shows a "truer" gap.
 
 ## Setup
 
 Same design as the main bracketing experiment: W1 eval split, gate enabled, FreCoS
-eviction, ttl_confidence = 0.9, cluster_count_k = 10, three lambda_source values x 10
-seeds, but n_queries=1800 instead of 12000 and cache_size_entries=248 (25% of this
-trace's smaller distinct-answer_id count), the scarcer-calibration design this follow-up
-was built for. Real clustering (gptcache_ext.staleness.assign_real_clusters) and
-benchmarks.semantic_index.SemanticIndex (0.8 threshold) replace the prior oracle-cluster
-+ exact-match setup, same as every other experiment in this rerun.
+eviction, ttl_confidence=0.9, cluster_count_k=10, three lambda_source values x 5 seeds,
+but n_queries=1800 instead of 3000 and cache_size_entries=248 (the scarcer-calibration
+design this follow-up was built for, independent of the main rerun's own scale — see
+this runner's module docstring). Per-cluster calibration observations at this scale
+range 41-70 across the 5 seeds, close to the fitter's MIN_OBSERVATIONS=30 fallback
+floor (gptcache_ext/staleness/fitter.py), same design intent as before the generator
+fix, just re-measured on the new trace text.
 
 ## Bootstrap method
 
-Percentile bootstrap over the 10 per-seed values in each lambda_source group, 10,000
+Percentile bootstrap over the 5 per-seed values in each lambda_source group, 10,000
 resamples, median of each resample, 95% CI from the 2.5th/97.5th percentiles. Python
 stdlib random, seeded 12345.
 
 ## Results
 
-| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | 95% CI | median n_hits | median false_hit_rate |
-|---|---|---|---|---|---|---|
-| global | 0.0729 | (0.0651, 0.0841) | 2.07 | (1.61, 2.43) | 584.0 | 0.961 |
-| learned | 0.0709 | (0.0608, 0.0864) | 2.11 | (1.59, 2.44) | 582.5 | 0.961 |
-| oracle | 0.0324 | (0.0195, 0.0514) | 2.16 | (1.59, 2.46) | 569.5 | 0.966 |
+| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
+|---|---|---|---|---|---|
+| global | 0.1096 | (0.0833, 0.1483) | 1.25 | 0.407 | 0.904 |
+| learned | 0.0623 | (0.0446, 0.0955) | 1.20 | 0.407 | 0.895 |
+| oracle | 0.0410 | (0.0284, 0.0578) | 1.22 | 0.407 | 0.907 |
 
 Mann-Whitney U, stale_hit_rate:
 
-- learned vs global: U = 44.0, p ~ 0.650, r ~ 0.10 (not significant)
-- learned vs oracle: U = 98.0, p ~ 0.0003, r ~ 0.81 (significant, large effect)
-- global vs oracle: U = 100.0, p ~ 0.0002, r ~ 0.85 (significant, large effect)
+- learned vs global: U_a=3.0, p ~ 0.047, r ~ -0.76 (significant, large effect)
+- learned vs oracle: U_a=21.0, p ~ 0.076, r ~ 0.68 (not significant at n=5, large effect)
+- global vs oracle: U_a=25.0, p ~ 0.009, r ~ 1.00 (significant, perfect separation)
 
 ## Takeaway for the report
 
 This follow-up was originally designed to test whether scarcer calibration data widens
-the learned/oracle gap that the well-specified bracketing run couldn't detect. Under
-real clustering, that question is answered by a different mechanism than intended: the
-gap is already wide at every calibration sample size, because clustering -- which
-happens before calibration in the pipeline -- fails to recover cluster identity from
-this workload's query text regardless of how much data feeds the per-cluster MLE
-downstream. Scarcer calibration would only matter if clustering itself were already
-working.
+the learned/oracle gap the well-specified bracketing run couldn't detect at the original
+12000-query scale. Under the fixed generator, both the main and this scarcer-calibration
+run show the same qualitative pattern (learned between global and oracle); this run's
+learned-vs-global comparison reaches significance where the main 3000-query run's does
+not (though the main run's effect size, r ~ -0.84, is still larger). This is consistent
+with -- not proof of -- the original hypothesis that scarcer calibration makes the
+learned/global gap more visible; five seeds per condition is not enough to distinguish
+"scarcer calibration widens the gap" from ordinary seed-to-seed variation at this
+sample size.
