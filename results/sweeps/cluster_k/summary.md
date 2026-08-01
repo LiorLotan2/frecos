@@ -3,18 +3,18 @@
 ## Setup
 
 W1, gate enabled, FreCoS eviction, lambda_source=learned. Fixed defaults while sweeping
-cluster_count_k: cache_size_entries=1980, ttl_confidence=0.9. n_queries=12000,
-n_tenants=5. Four K points: 5, 10, 20, 50. n_clusters is varied at trace generation
-time, so the ground-truth cluster structure itself changes per point.
+cluster_count_k: cache_size_entries=495, ttl_confidence=0.9. n_queries=3000,
+n_tenants=5 (reduced-scale rerun with the generator text fix, see
+results/brackets/summary.md). Four K points: 5, 10, 20, 50. n_clusters is varied at
+trace generation time, so the ground-truth cluster structure itself changes per point.
 
-Rerun with real embedder-based clustering (gptcache_ext.staleness.assign_real_clusters)
-and benchmarks.semantic_index.SemanticIndex (0.8 threshold), replacing the prior
-oracle-cluster + exact-match setup. Ten distinct traces per point (seeds 0-9). 40 rows
-in results.csv, matching benchmarks.harness.CSV_COLUMNS (now including cluster_ari).
+Five distinct traces per point (seeds 0-4). 20 rows in results.csv, matching
+benchmarks.harness.CSV_COLUMNS (now including cluster_ari, n_useful_hits,
+useful_hit_rate).
 
 ## Bootstrap method
 
-Percentile bootstrap over the 10 per-seed values per point, 10,000 resamples, median of
+Percentile bootstrap over the 5 per-seed values per point, 10,000 resamples, median of
 each resample, 95% CI from the 2.5th/97.5th percentiles. Python stdlib random, seeded
 12345.
 
@@ -22,25 +22,33 @@ each resample, 95% CI from the 2.5th/97.5th percentiles. Python stdlib random, s
 
 | cluster_count_k | median hit_rate | 95% CI | median stale_hit_rate | 95% CI | median cluster_ari |
 |---|---|---|---|---|---|
-| 5  | 0.6032 | (0.5443, 0.6295) | 0.0615 | (0.0533, 0.0841) | 0.022 |
-| 10 | 0.5624 | (0.5394, 0.5910) | 0.0707 | (0.0594, 0.0909) | 0.036 |
-| 20 | 0.5630 | (0.5552, 0.5864) | 0.0744 | (0.0645, 0.0861) | 0.047 |
-| 50 | 0.5975 | (0.5828, 0.6054) | 0.0779 | (0.0605, 0.0862) | 0.055 |
+| 5  | 0.4037 | (0.3402, 0.4466) | 0.0778 | (0.0640, 0.1777) | 0.451 |
+| 10 | 0.3360 | (0.2921, 0.3836) | 0.0677 | (0.0505, 0.0874) | 0.419 |
+| 20 | 0.3407 | (0.3354, 0.3757) | 0.0820 | (0.0590, 0.1577) | 0.272 |
+| 50 | 0.3307 | (0.3079, 0.3487) | 0.0804 | (0.0784, 0.1498) | 0.320 |
 
 ## Effect direction
 
-hit_rate is non-monotone, dipping at K=10/20 and recovering at K=5 and K=50; the CIs
-overlap heavily at every adjacent pair, same as under the prior exact-match run, so this
-remains not distinguishable from noise at n=10 seeds. stale_hit_rate rises gently and
-close to monotonically from K=5 to K=50 (0.0615 -> 0.0707 -> 0.0744 -> 0.0779), a
-slightly cleaner trend than the exact-match era's up-then-down pattern, but the CIs
-still overlap between every adjacent pair.
+hit_rate is non-monotone, highest at K=5 and roughly flat from K=10 onward; the CIs
+overlap substantially at K=10/20/50, so hit_rate is not clearly distinguishable across
+those three at n=5 seeds. stale_hit_rate is similarly non-monotone (0.078, 0.068,
+0.082, 0.080), with wide, overlapping CIs at every point.
 
-The clearer trend in this rerun is cluster_ari itself, which rises steadily with K
-(0.022 at K=5 to 0.055 at K=50): more, smaller ground-truth clusters appear to be
-marginally easier for k-means-on-embeddings to separate than fewer, larger ones, though
-every value in this range is still far below what would count as good clustering
-(ARI 1.0 is a perfect match; these are close to what a random assignment would produce).
-This is consistent with, not contradicting, the central clustering-quality finding in
-results/brackets/summary.md: cluster identity is not well recovered at any K tested
-here, it is merely somewhat less badly recovered as K grows.
+cluster_ari now shows the *opposite* trend from the pre-fix rerun: it is highest at
+K=5 (0.451) and lowest at K=20 (0.272), rather than rising steadily with K. This is
+not explained by topic-vocabulary exhaustion -- CLUSTER_TOPICS has 51 entries, more
+than every K tested here (5/10/20/50), so every cluster gets a distinct topic phrase at
+every K, no cycling occurs. The more likely explanation is the ordinary k-means
+difficulty of separating more, smaller ground-truth clusters at a fixed calibration
+sample size: at K=20 or K=50, each cluster's calibration slice is proportionally
+smaller (n_queries and calibration fraction are unchanged across this sweep, so more
+clusters means fewer calibration rows per cluster), giving k-means less signal per
+centroid to converge on. At only 5 seeds per point, though, this is a plausible
+reading of a non-monotone result with wide, overlapping CIs, not a confirmed effect --
+a genuine investigation would need to hold calibration-observations-per-cluster fixed
+while varying K, which this sweep does not do.
+
+This result sits in a supplementary table (`analysis/figures/supplementary.csv`)
+rather than a headline figure, consistent with the pre-fix rerun's choice, since it
+still clears neither the effect-size nor confidence-interval bar the rest of this
+report's headline figures meet.

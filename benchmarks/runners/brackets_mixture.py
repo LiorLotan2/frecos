@@ -10,10 +10,11 @@ likelihood is systematically biased for both the fast and the slow subpopulation
 one cluster, since no single rate is correct for either half of the mixture.
 
 Design is otherwise identical to brackets.py and brackets_misspecified.py: same trace
-scale, same cache size, same three lambda_source values, ten seeds each. oracle_lambdas
-still uses 1/half_life_scale, since the mixture's overall mean equals the plain
-exponential's, and that mean rate is the best a single-rate oracle table can encode; the
-mixture's bimodal shape has no equivalent slot in this project's staleness table either.
+scale, same cache size, same three lambda_source values, five seeds each (reduced-scale
+rerun, see brackets.py's docstring). oracle_lambdas still uses 1/half_life_scale, since
+the mixture's overall mean equals the plain exponential's, and that mean rate is the
+best a single-rate oracle table can encode; the mixture's bimodal shape has no
+equivalent slot in this project's staleness table either.
 """
 import os
 
@@ -32,11 +33,11 @@ from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
-N_QUERIES = 12000
-CACHE_SIZE_ENTRIES = 1650
+N_QUERIES = 3000
+CACHE_SIZE_ENTRIES = 412
 TTL_CONFIDENCE = 0.9
 HALF_LIFE_MODE = "mixture"
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 LAMBDA_SOURCES = ["global", "learned", "oracle"]
 
 RESULTS_DIR = os.path.join(

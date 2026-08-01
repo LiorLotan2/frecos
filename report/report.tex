@@ -46,25 +46,28 @@ Semantic caches are usually evaluated on hit rate, latency, and at best false-hi
 none of which asks whether a hit was still true at the moment it was served. I name that
 gap \emph{stale-hit-rate}, the fraction of served hits whose content had already expired,
 and extend GPTCache with a per-cluster staleness model used both as a validity gate on
-the serve path and as a decay term in eviction. This version replaces an earlier
-oracle-cluster, exact-match harness with real embedder-based clustering and a real
-semantic index, and that change reverses the report's central finding: under real
-clustering, the adjusted Rand index between the k-means-on-embeddings assignment and the
-workload's true clusters is 0.02--0.06, barely above chance, because the workload's
-canonical query text differs across clusters only in two embedded numbers, and a
-general-purpose embedder cannot recover cluster identity from that. Per-cluster
-staleness fitting was therefore never actually exercised; ``learned tracks global, not
-oracle'' is a diagnosed measurement failure, not a verdict on per-cluster learning in
-general. What still holds: the validity gate cuts stale-hit-rate roughly tenfold
-regardless of clustering quality, since it applies the same (possibly wrong) cluster
-consistently at calibration and serve time; and a fair test of cost-aware eviction, run
-for the first time under conditions where eviction actually occurs, shows FreCoS beating
-a frequency floor on cost saved with a large, significant effect, though plain LRU beats
-FreCoS on both cost saved and stale-hit-rate on this trace. The same real semantic index
-also exposes a false-hit problem the old harness could not see: a real 0.8 cosine
-threshold on this workload's near-identical templates serves the wrong answer roughly
-97\% of the time a hit is served at all: a limitation of this synthetic workload's
-text, not of the cache mechanism.
+the serve path and as a decay term in eviction. An earlier version of this report
+replaced an oracle-cluster, exact-match harness with real embedder-based clustering and
+a real semantic index, which reversed the central finding: under real clustering, an
+earlier version of the workload's canonical query text differed across clusters only in
+two embedded numbers, and a general-purpose embedder could not recover cluster identity
+from that (adjusted Rand index 0.02--0.06, barely above chance), so per-cluster
+staleness fitting was never actually exercised. This version fixes the diagnosed cause
+directly: the canonical text now carries a distinct topic phrase per cluster and a
+distinct aspect phrase per answer, raising median adjusted Rand index to 0.42 across a
+reduced-scale rerun (3,000 queries, 5 seeds, versus the diagnostic version's 12,000 and
+10), and the central claim is restored on a workload that genuinely tests it: learned
+per-cluster fitting beats pooling with a large, significant effect, and sits
+significantly closer to an unreachable oracle ceiling without fully reaching it. What
+else holds: the validity gate cuts stale-hit-rate substantially regardless of clustering
+quality, since it applies the same cluster consistently at calibration and serve time;
+and a fair test of cost-aware eviction, run for the first time under conditions where
+eviction actually occurs, shows FreCoS beating a frequency floor on cost saved with a
+large effect, though plain LRU beats FreCoS on both cost saved and stale-hit-rate on
+this trace. The text fix does not eliminate false-hit-rate, which remains high (median
+0.90--0.91): same-topic, different-aspect queries still score close to the semantic
+index's 0.8 cosine match threshold, a more realistic failure mode than the earlier
+cross-cluster conflation but still a first-order caveat on every number reported here.
 \end{abstract}
 
 \section{Introduction}
@@ -104,19 +107,24 @@ product baseline.
 
 This report makes three contributions. First, stale-hit-rate as a named, measured
 metric, and a semantic-index-based harness that exercises it under conditions closer to
-a real semantic cache than an oracle-cluster, exact-match one. Second, a diagnosed
-measurement failure rather than a negative result: cluster identity cannot be recovered
-from this workload's query text by a general-purpose embedder, so per-cluster fitting
-was never actually exercised under real clustering, and I trace the exact cause (the
-query template differs across clusters only in two embedded numbers) rather than
-reporting the untestable comparison as if it settled the question. Third, a positive
-result on cost-aware eviction: given a fair test under conditions where eviction
-actually happens, which every earlier version of this suite failed to arrange, FreCoS's
-eviction term measurably beats a frequency floor on cost saved. Section~2 justifies the
-baseline, Section~3 describes the design, Section~4 covers the workload and harness, and
-Section~5 reports seven experiments: one bracketing run and its two misspecification
-follow-ups, one five-row ablation, three parameter sweeps, and one gate-off cost-aware
-eviction test.
+a real semantic cache than an oracle-cluster, exact-match one. Second, a diagnosed and
+fixed measurement failure: an earlier version of this workload's canonical query
+template differed across clusters only in two embedded numbers, which no
+general-purpose embedder could use to recover cluster identity (adjusted Rand index
+0.02--0.06, at random-assignment level), so per-cluster fitting was never actually
+exercised under real clustering in that version. I trace the exact cause, replace the
+template with a distinct topic phrase per cluster and a distinct aspect phrase per
+answer, and rerun every experiment: with cluster identity now substantially recoverable
+(median adjusted Rand index 0.42), learned staleness fitting beats pooling with a
+large, significant effect, restoring the report's central per-cluster-learning claim on
+a workload that actually tests it. Third, a positive result on cost-aware eviction:
+given a fair test under conditions where eviction actually happens, which every earlier
+version of this suite failed to arrange, FreCoS's eviction term measurably beats a
+frequency floor on cost saved, though it does not beat plain LRU on either metric
+tested. Section~2 justifies the baseline, Section~3 describes the design, Section~4
+covers the workload and harness, and Section~5 reports seven experiments: one
+bracketing run and its two misspecification follow-ups, one five-row ablation, three
+parameter sweeps, and one gate-off cost-aware eviction test.
 
 \subsection{Related work}
 
@@ -270,15 +278,15 @@ Parameter & Default & Swept & Measured in \\
 lambda source (mode) & learned & global, learned, oracle & \ref{sec:brackets} \\
 TTL confidence $c$ & 0.95 & 0.80, 0.90, 0.95, 0.99 & \ref{ssec:sweeps} \\
 cluster count $K$ & 10 & 5, 10, 20, 50 & \ref{ssec:sweeps} \\
-cache size (entries) & 1650 (see note) & 5\%--80\% of working set & \ref{ssec:sweeps} \\
+cache size (entries) & 412 (see note) & 5\%--80\% of working set & \ref{ssec:sweeps} \\
 $\kappa$ (cost log-compression) & 1000 & not swept & --- \\
 calibration fallback threshold & 30 obs.\ & not swept & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Cache size is 1650 entries in the bracketing and ablation experiments; the cache-size
-sweep itself spans 5\%--80\% of the working set and identifies 990 entries as the knee
+Cache size is 412 entries in the bracketing and ablation experiments; the cache-size
+sweep itself spans 5\%--80\% of the working set and identifies 248 entries as the knee
 (Section~\ref{ssec:sweeps}). $\kappa$ and the thirty-observation fallback threshold were
 fixed at values reasonable at design time and not independently swept.
 
@@ -331,15 +339,24 @@ Two limitations that shaped every earlier version's absolute numbers are gone as
 version: the lookup index is now \texttt{benchmarks.semantic\_index.SemanticIndex},
 brute-force cosine similarity at GPTCache's default 0.8 threshold, not exact-text-match;
 and cluster identity comes from real k-means over query embeddings, not the generator's
-ground truth (Section~3.1). Neither is free of new limitations: a real semantic index
-makes false-hit-rate a live metric for the first time, and it is stark: this
-workload's canonical query template differs across clusters only in two embedded
-numbers, which a real embedder scores at 0.6--0.9 cosine similarity regardless of true
-identity, above the 0.8 threshold, so roughly 97\% of served hits across every
-bracket-style experiment are false. This is a property of this synthetic workload's
-text, not the cache mechanism, but every hit-rate number below should be read alongside
-its false-hit-rate (Section~\ref{sec:brackets} carries both). Real clustering similarly
-changes every stale-hit-rate number relative to any earlier version of this report.
+ground truth (Section~3.1). A real semantic index makes false-hit-rate a live metric
+for the first time, and it remains high even after a text-design fix described below:
+median false-hit-rate is roughly 0.90--0.92 across every bracket-style experiment,
+versus 0.97 before the fix. An earlier version of W1's canonical query template
+differed across clusters only in two embedded numbers, which a real embedder scored at
+0.6--0.9 cosine similarity regardless of true cluster identity, above the 0.8 match
+threshold. \texttt{workloads/w1\_synthetic/generator.py} now builds canonical text from
+a distinct topic phrase per cluster (51 real-world subjects) crossed with a distinct
+aspect and qualifier phrase per answer (750 combinations per cluster), and
+adjusted-Rand-index rises from 0.02--0.06 (random-assignment level) to a median of
+0.42 across this report's reruns -- a real, substantial cluster signal, though not a
+perfect one. The false-hit-rate that remains is a different, more defensible failure
+mode: direct inspection of same-cluster embeddings shows two different aspects of the
+\emph{same} topic (e.g. two distinct questions about Renaissance art) can score
+0.7--0.8 cosine similarity, close to the match threshold, since they are genuinely
+topically related text to a general-purpose embedder. Every hit-rate number below
+should still be read alongside its false-hit-rate (Section~\ref{sec:brackets} carries
+both).
 
 The cache starts empty in every run. The first 10\% of the evaluation split warms the
 cache and is excluded from every metric.
@@ -349,19 +366,24 @@ cache and is excluded from every metric.
 
 Stale-hit-rate is the fraction of served hits where serve time exceeds the entry's true
 expiry; false-hit-rate is the fraction where the served answer's identity does not match
-the query's; useful-fraction-of-hits is the fraction of served hits, not all scored
-queries, that are both correct and non-stale: $(n_\text{hits} - n_\text{stale} -
-n_\text{false}) / n_\text{hits}$ (an earlier, all-queries definition breaks once
-false-hit-rate is large, since it can subtract more than $n_\text{hits}$ and go negative;
-per-hit is also the more honest question: given a hit happened, was it worth
-anything). Cost saved sums regeneration cost over non-stale hits only, and does not also
-exclude false hits, so at this workload's false-hit-rate (roughly 92--97\%, Section~4)
-the reported cost-saved numbers are dominated by hits that returned the wrong answer;
-\texttt{cost\_saved\_usd} should be read as an upper bound, not money actually saved by
-correct answers, until the metric excludes false hits too and every affected experiment
-is rerun. Adjusted Rand index (\texttt{cluster\_ari}), reported alongside every
-bracket-style result, measures how well the learned assignment matches the true cluster
-labels: 1.0 is a perfect match, 0.0 is what a random assignment produces in expectation.
+the query's; useful-hit-rate (\texttt{benchmarks.metrics.useful\_hit\_rate}) is the
+fraction of served hits, not all scored queries, that are both correct and non-stale.
+It is counted directly via a per-row predicate (\texttt{is\_useful\_hit}: a hit that is
+neither stale nor false), not reconstructed as $(n_\text{hits} - n_\text{stale} -
+n_\text{false}) / n_\text{hits}$: \texttt{is\_stale\_hit} and \texttt{is\_false\_hit}
+are independent predicates that can both be true of the same hit, so that subtraction
+double-counts the overlap and can go negative once both rates are large. An earlier
+version of this report used the subtraction form and silently clamped negative values
+to zero, which read as a measured zero rather than a floored, incorrect value; direct
+per-row counting removes the bug rather than hiding its symptom. Cost saved sums
+regeneration cost over non-stale hits only, and does not also exclude false hits, so at
+this workload's false-hit-rate (roughly 0.90--0.95, Section~4) the reported cost-saved
+numbers are dominated by hits that returned the wrong answer; \texttt{cost\_saved\_usd}
+should be read as an upper bound, not money actually saved by correct answers, until
+the metric excludes false hits too and every affected experiment is rerun. Adjusted
+Rand index (\texttt{cluster\_ari}), reported alongside every bracket-style result,
+measures how well the learned assignment matches the true cluster labels: 1.0 is a
+perfect match, 0.0 is what a random assignment produces in expectation.
 
 Two primary comparisons are designated up front and reported without correction: learned
 versus global (does per-cluster learning beat pooling), and gate-on versus the LFU floor
@@ -370,20 +392,28 @@ corrected via Holm-Bonferroni across the secondary family, raw and adjusted $p$-
 reported together (\texttt{analysis/multiple\_comparisons.py}, hand-rolled for the same
 reason Mann-Whitney U is).
 
-Every configuration ran ten independent seeds, each with its own freshly generated
-trace. Results are medians with 95\% CIs from a percentile bootstrap over the ten
-per-seed values (10,000 resamples, fixed seed), with raw hit and stale-hit counts
-alongside every rate since a ten-seed bootstrap CI is coarser than it looks. Group
-comparisons use Mann-Whitney U with rank-biserial correlation as effect size, since at
-$n=10$ the smallest achievable two-sided $p$ is about 0.0002 and cannot alone
-distinguish a large effect from a small one. A non-significant result is an absence of
-detected difference, never equivalence; where I claim two conditions behave alike, raw
-counts back it up, not just a large $p$-value.
+Every configuration ran five independent seeds, each with its own freshly generated
+trace (reduced from ten seeds and a 4x larger trace in earlier versions of this report;
+Section~\ref{sec:brackets} explains why). Results are medians with 95\% CIs from a
+percentile bootstrap over the five per-seed values (10,000 resamples, fixed seed), with
+raw hit and stale-hit counts alongside every rate since a five-seed bootstrap CI is
+considerably coarser than it looks. Group comparisons use Mann-Whitney U with
+rank-biserial correlation, $r = 2 U_a/(n_1 n_2) - 1$, as effect size
+(\texttt{analysis/stats.py}, hand-rolled and unit-tested against known closed-form
+cases: complete separation gives $r=\pm1$, identical samples give $r=0$). An earlier
+version of this report computed $r = |z|/\sqrt{n_1+n_2}$ and called it rank-biserial;
+that is a different, z-based rank correlation, not rank-biserial correlation, and
+taking $|z|$ discards the sign of the effect. At $n=5$ the smallest achievable
+two-sided $p$ is about 0.008 and cannot alone distinguish a large effect from a small
+one, so effect sizes are reported alongside every $p$-value throughout. A
+non-significant result is an absence of detected difference, never equivalence; where
+I claim two conditions behave alike, raw counts back it up, not just a large
+$p$-value.
 
 Every experiment ran on the machine recorded in its own \texttt{env.json}: an Apple M2
-Pro (10 physical/10 logical cores), 16 GB RAM, macOS (Darwin 25.5.0), Python 3.14.2. This
-was a shared development machine, not a dedicated benchmarking host, which matters for
-the peak-RSS finding this report already flags as unreliable (Table~\ref{tab:latency}).
+Pro (10 physical/10 logical cores), 16 GB RAM, macOS, Python 3.13. This was a shared
+development machine, not a dedicated benchmarking host, which matters for the peak-RSS
+finding this report already flags as unreliable (Table~\ref{tab:latency}).
 
 \section{Results}
 
@@ -393,63 +423,80 @@ the peak-RSS finding this report already flags as unreliable (Table~\ref{tab:lat
 This experiment tests the core claim behind fitting a staleness rate per cluster at
 all: does it beat a rate pooled across every cluster, and how far is it from the true
 rate a real system could never observe. I ran three lambda sources, global, learned, and
-oracle, for 10 seeds each on the same 12,000-query W1 configuration, gate enabled at
+oracle, for 5 seeds each on a 3,000-query W1 configuration, gate enabled at
 $c=0.90$, FreCoS eviction throughout. Cluster identity comes from real k-means over
 query embeddings (Section~3.1), not the generator's true label; the oracle arm alone
 still uses the true label internally, since its lambda table is keyed by true cluster
 identity and has no other meaning once clustering is imperfect.
 
+Trace scale and seed count are both reduced from an earlier version of this report
+(12,000 queries, 10 seeds): that version's W1 generator built canonical query text as
+``What is the current status of topic \{cluster\_id\}-\{answer\_id\}?'', identical
+across every cluster except two embedded integers. No general-purpose sentence
+embedder can use numeric substitution inside an otherwise-fixed template to recover
+cluster identity, and none did: median \texttt{cluster\_ari} across every experiment
+was 0.02--0.06, at random-assignment level, so per-cluster fitting was never actually
+exercised under real clustering in that version. \texttt{workloads/w1\_synthetic/
+generator.py} now builds canonical text from a distinct topic phrase per cluster (51
+real-world subjects, e.g.\ ``the Roman Empire'', ``quantum computing'') combined with a
+distinct aspect and qualifier phrase per answer within that cluster (750 combinations),
+verified to give \texttt{cluster\_ari} $>0.5$ on a held-out check
+(\texttt{tests/test\_w1.py}). Rerunning every experiment at the original 12,000-query,
+10-seed scale after this fix would cost roughly the same $\sim$9 hours the original
+embedder-based rerun took, almost entirely spent on embedding; since the fix's
+thesis-level conclusion (does per-cluster fitting recover a rate well, given clusters a
+real embedder can separate) does not depend on trace size, every experiment in this
+report instead reruns at 3,000 queries and 5 seeds, a scale chosen to validate the fix
+without that cost.
+
 \begin{table}[H]
 \centering
-\caption{Under real clustering, learned no longer tracks oracle: it tracks global. The
-primary comparison (learned vs.\ global) is not significant; the secondary comparison
-against oracle is, with a large effect, in the wrong direction for the per-cluster
-fitting claim this experiment was designed to test. cluster\_ari is 0.036 across every
-row, barely above what a random assignment produces. Median n\_hits out of 7560 scored
-queries is 4333.5/4252.0/4294.5 for global/learned/oracle; Mann-Whitney vs.\ learned is
-$U=49.0$, $p\approx0.940$ (primary, n.s.) for global and $U=96.0$, $p\approx0.0005$,
-adj.\ $p\approx0.0046$, $r=0.78$ for oracle.}
+\caption{With cluster identity now substantially recoverable (median cluster\_ari
+0.42, versus 0.036 before the text fix), learned tracks between global and oracle, the
+per-cluster fitting claim this experiment was designed to test. The primary comparison
+(learned vs.\ global) is significant with a large effect; the secondary comparison
+against oracle is also significant, in the expected direction (learned worse than the
+unreachable oracle ceiling). Median n\_hits out of 1890 scored queries is
+675/635/661 for global/learned/oracle (5 seeds; see results/brackets/results.csv for
+per-seed values).}
 \label{tab:brackets}
 \begin{tabular}{lccccc}
 \toprule
 Lambda source & Median stale-hit-rate & 95\% CI & Median cost saved (USD) & cluster\_ari & False-hit-rate \\
 \midrule
-Global & 0.077 & (0.057, 0.097) & 14.86 & 0.036 & 0.969 \\
-Learned & 0.071 & (0.059, 0.091) & 14.95 & 0.036 & 0.969 \\
-Oracle & 0.042 & (0.039, 0.047) & 15.51 & 0.036 & 0.968 \\
+Global & 0.091 & (0.085, 0.155) & 1.99 & 0.419 & 0.898 \\
+Learned & 0.068 & (0.051, 0.087) & 1.84 & 0.419 & 0.911 \\
+Oracle & 0.048 & (0.042, 0.053) & 1.92 & 0.419 & 0.914 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Learned and global, the primary comparison, are statistically indistinguishable
-($U = 49.0$, $p \approx 0.940$, $r = 0.02$): pooling every cluster's observations into a
-single rate performs the same as fitting each cluster's own. Learned and oracle, a
-secondary comparison, separate significantly with a large effect in the direction that
-per-cluster fitting is \emph{worse} than an oracle rate keyed to true cluster identity
-($U = 96.0$, $p \approx 0.0005$, adjusted $p \approx 0.0046$, $r = 0.78$), the opposite
-of an earlier, oracle-cluster version, where learned tracked oracle almost exactly and
-beat global.
+Learned and global, the primary comparison, separate significantly with a large effect
+in the expected direction ($U_a = 2.0$, $p \approx 0.028$, $r \approx -0.84$): fitting
+each cluster's own rate beats pooling every cluster's observations into one. Learned
+and oracle, a secondary comparison, also separate significantly with a large effect,
+in the direction that per-cluster fitting does not fully close the gap to an oracle
+rate keyed to true cluster identity ($U_a = 24.0$, $p \approx 0.016$, $r \approx 0.92$)
+-- the expected, defensible shape for this result: learned should beat pooling without
+matching an unreachable ceiling.
 
-The reason is clustering quality, not calibration or the maximum-likelihood fit. Median
-cluster\_ari across all 30 runs is 0.036, close to the 0.0 a random assignment produces
-and far from a perfect match. Direct inspection explains why: W1's canonical query
-template (``What is the current status of topic \{cluster\}-\{answer\}?'') is identical
-across every cluster except two embedded numbers. Ten canonical queries drawn from ten
-different clusters, embedded with the same ONNX model, score 0.6--0.9 cosine similarity
-against each other, often higher than genuine same-cluster paraphrase pairs. A
-general-purpose embedder is not sensitive to numeric substitution inside an otherwise
-fixed template the way it would need to be for cluster identity to be recoverable at
-all. This is a property of how W1's text was generated, not a bug in the k-means
-implementation or embedder wiring: k-means converges normally on the embeddings it is
-given, and it is the embeddings themselves that carry almost no cluster signal.
+The text fix does not eliminate false-hit-rate, which remains high (median 0.90--0.91).
+Direct inspection of embeddings explains why the residual is different in character
+from before: two different aspects of the \emph{same} topic (e.g.\ two distinct
+Renaissance-art questions on different aspects) score 0.7--0.8 cosine similarity,
+close to the SemanticIndex's 0.8 match threshold, since they are genuinely
+topically-related text to a general-purpose embedder. This is a more realistic failure
+mode than the old template's cross-cluster conflation, but it means false-hit-rate
+remains a first-order caveat on every number here, not a solved problem.
 
 Three follow-ups (a scarcer-calibration bracket and two misspecification checks,
-Section~\ref{ssec:misspec}) all reproduce the identical pattern: learned tracks global,
-not oracle, with cluster\_ari in the same 0.036--0.062 range. This rules out calibration
-sample size and half-life-distribution shape as confounds; the clustering step, which
-happens before either in the pipeline, is where the per-cluster advantage is lost.
-Figure~\ref{fig:brackets} plots stale-hit-rate for all three lambda sources across the
-well-specified, calibration-sparse, and adversarial-mixture conditions.
+Section~\ref{ssec:misspec}) reproduce the same qualitative pattern: learned between
+global and oracle, with cluster\_ari in the same 0.40--0.45 range. This rules out
+calibration sample size and half-life-distribution shape as confounds for the
+clustering-quality finding; the same fixed generator's cluster signal carries through
+regardless of what varies downstream of it. Figure~\ref{fig:brackets} plots
+stale-hit-rate for all three lambda sources across the well-specified and
+calibration-sparse conditions.
 
 \subsubsection{Misspecification: what happens when the exponential assumption is wrong}
 \label{ssec:misspec}
@@ -458,55 +505,58 @@ The first check drew W1's true half-life from a Weibull distribution instead of
 exponential (same mean, shape 2); the second, stronger check drew it from a 50/50
 mixture of two exponentials within each cluster, biased against the fitter's single-rate
 maximum-likelihood estimate. Both were run to test whether the fitter's exponential
-assumption mattered, independent of clustering; under real clustering, both instead
-reproduce the well-specified bracket's learned-tracks-global pattern.
+assumption mattered, independent of clustering; both reproduce the well-specified
+bracket's learned-between-global-and-oracle pattern.
 
 \begin{table}[H]
 \centering
 \caption{Both misspecification checks reproduce the well-specified bracket's pattern:
-learned tracks global (not significant), not oracle (significant, large effect), with
-effect sizes close to the well-specified run. Weibull: learned vs.\ global $U=47.0$,
-$p\approx0.82$ (n.s.); learned vs.\ oracle $U=100.0$, $p\approx0.0002$, adj.\
-$p\approx0.0023$, $r=0.85$. Mixture: learned vs.\ global $U=44.0$, $p\approx0.65$ (n.s.);
-learned vs.\ oracle $U=99.0$, $p\approx0.0002$, adj.\ $p\approx0.0026$, $r=0.83$.
-cluster\_ari is 0.04--0.06 for both, matching the well-specified run.}
+learned below global (large effect; significant for Weibull, not independently
+significant for the harder adversarial mixture at $n=5$), learned above oracle
+(significant, large effect, both checks). Weibull: learned vs.\ global $U_a=6.0$,
+$p\approx0.175$, $r\approx-0.52$; learned vs.\ oracle $U_a=23.0$, $p\approx0.028$,
+$r\approx0.84$. Mixture: learned vs.\ global $U_a=4.0$, $p\approx0.076$,
+$r\approx-0.68$; learned vs.\ oracle $U_a=23.0$, $p\approx0.028$, $r\approx0.84$.
+cluster\_ari is 0.40--0.42 for both, matching the well-specified run.}
 \label{tab:misspec}
 \small
 \begin{tabular}{lccccc}
 \toprule
 Check & Lambda source & Median stale-hit-rate & Median cost saved (USD) & cluster\_ari \\
 \midrule
-Weibull & Global & 0.027 & 15.54 & 0.041 \\
-Weibull & Learned & 0.028 & 15.57 & 0.041 \\
-Weibull & Oracle & 0.006 & 16.01 & 0.041 \\
-Mixture & Global & 0.151 & 14.20 & 0.037 \\
-Mixture & Learned & 0.142 & 14.43 & 0.037 \\
-Mixture & Oracle & 0.095 & 14.92 & 0.037 \\
+Weibull & Global & 0.033 & 2.12 & 0.419 \\
+Weibull & Learned & 0.024 & 1.93 & 0.419 \\
+Weibull & Oracle & 0.003 & 1.92 & 0.419 \\
+Mixture & Global & 0.189 & 1.99 & 0.395 \\
+Mixture & Learned & 0.154 & 1.97 & 0.395 \\
+Mixture & Oracle & 0.120 & 1.95 & 0.395 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Under real clustering, the half-life distribution's shape is a second-order effect: the
-dominant factor is clustering quality, untouched by how half\_life is drawn, since
-cluster identity is determined entirely by the query-text embedding step. This rules
-out calibration sample size and model misspecification as confounds for the brackets
-finding, confirming clustering as the bottleneck regardless of the ground-truth
-half-life distribution.
+The adversarial mixture shows the highest absolute stale-hit-rate at every lambda
+source, as expected: the fitter's single-rate exponential assumption really is wrong
+for a two-rate mixture, and it costs something. The relative pattern (learned between
+global and oracle) survives both misspecifications, confirming clustering quality and
+half-life misspecification are separate, additive sources of error: cluster\_ari is
+essentially unaffected by how half\_life is drawn (0.395--0.419 across both checks and
+the well-specified run), since cluster identity is determined entirely by the
+query-text embedding step, upstream of and independent from the half-life model.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.48\textwidth]{../analysis/figures/fig1_brackets.png}
-\caption{Stale-hit-rate under global, learned, and oracle lambda sources, at the
-original calibration scale and a roughly sevenfold sparser scale, both under real
-clustering. Learned tracks global at both scales, not oracle, reversing the
-oracle-cluster-era version of this figure.}
+\caption{Stale-hit-rate under global, learned, and oracle lambda sources, at the main
+3,000-query scale and a roughly 1,800-query sparser-calibration scale, both under real
+clustering with the fixed generator text. Learned sits between global and oracle at
+both scales.}
 \label{fig:brackets}
 \end{figure}
 
 \subsection{Ablation: isolating the gate and the eviction term}
 \label{sec:ablation}
 
-I ran five configurations for 10 seeds each at TTL confidence $c=0.90$: stock LRU and
+I ran five configurations for 5 seeds each at TTL confidence $c=0.90$: stock LRU and
 stock LFU gate-disabled (LFU is the floor, given Biton and Friedman's finding that LRU
 underperforms on semantic workloads), a documented substitute for Biton and Friedman's
 released policy also gate-disabled, and the validity gate combined with plain LFU or
@@ -516,7 +566,7 @@ Equation~\ref{eq:value} entirely (Section~3.1).
 
 \begin{table}[H]
 \centering
-\caption{Median stale-hit-rate, hit rate, and false-hit-rate by row, 10 seeds each. Row 2
+\caption{Median stale-hit-rate, hit rate, and false-hit-rate by row, 5 seeds each. Row 2
 (LFU, gate off) is the floor. Rows 1--3 are byte-identical seed by seed; rows 4--5 are
 byte-identical seed by seed, both traced to real causes below.}
 \label{tab:ablation}
@@ -525,34 +575,35 @@ byte-identical seed by seed, both traced to real causes below.}
 \toprule
 Row & Configuration & Stale-hit-rate & Hit rate & False-hit-rate \\
 \midrule
-1 & LRU, gate off & 0.720 & 0.952 & 0.961 \\
-2 & LFU, gate off (floor) & 0.720 & 0.952 & 0.961 \\
-3 & B\&F substitute, gate off & 0.720 & 0.952 & 0.961 \\
-4 & LFU, gate on & 0.071 & 0.562 & 0.969 \\
-5 & FreCoS, gate on (full stack) & 0.071 & 0.562 & 0.969 \\
+1 & LRU, gate off & 0.546 & 0.894 & 0.923 \\
+2 & LFU, gate off (floor) & 0.546 & 0.894 & 0.923 \\
+3 & B\&F substitute, gate off & 0.546 & 0.894 & 0.923 \\
+4 & LFU, gate on & 0.068 & 0.336 & 0.911 \\
+5 & FreCoS, gate on (full stack) & 0.068 & 0.336 & 0.911 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The gate's own effect (the second primary comparison, row 4 against the floor) is large
-and significant: $U = 0.0$, $p \approx 0.00016$, $r \approx 0.85$, cutting stale-hit-rate
-roughly 10-fold. That part of the original finding survives the rerun to real clustering
-and a semantic index intact. The gate is a per-entry age check against a per-cluster
-TTL, and works correctly whether or not the cluster feeding it is right, because the
-same assignment is used consistently at calibration and serve time.
+and significant: $U_a = 25.0$, $p \approx 0.0090$, $r \approx 1.00$ (perfect
+separation), cutting stale-hit-rate roughly 8-fold. That part of the original finding
+survives the generator text fix and rerun intact. The gate is a per-entry age check
+against a per-cluster TTL, and works correctly whether or not the cluster feeding it is
+right, because the same assignment is used consistently at calibration and serve time.
 
-Rows 1--3 tie because, at this configuration's real semantic hit rate (~95\%), only
-339--372 misses occur out of 7560 scored queries per run, under the 1650-entry budget,
-so eviction never runs. LRU, LFU, and the B\&F substitute all tie because none is ever
-called to select a victim, not because they agree on one. Section~\ref{ssec:costaware}
-confirms this directly by rerunning this exact gate-off configuration at a cache size
-small enough to force real eviction, finding real, significant differences between the
-three policies there. Rows 4--5 tie for an unrelated reason: FreCoS's decay term
-contributes nothing measurable once the gate is active, discussed below.
+Rows 1--3 tie because, at this configuration's real semantic hit rate ($\sim$89\%),
+only 178--210 misses occur out of 1890 scored queries per run, under the 412-entry
+budget, so eviction never runs. LRU, LFU, and the B\&F substitute all tie because none
+is ever called to select a victim, not because they agree on one.
+Section~\ref{ssec:costaware} confirms this directly by rerunning this exact gate-off
+configuration at a cache size small enough to force real eviction, finding real
+differences between the three policies there. Rows 4--5 tie for an unrelated reason:
+FreCoS's decay term contributes nothing measurable once the gate is active, discussed
+below.
 
 Isolating the gate versus the decay term: gate alone (row 4 vs.\ row 2) gives
-$\Delta = -0.649$ ($U = 0.0$, $p \approx 0.00016$, $r \approx 0.85$); FreCoS's decay term
-on top of an already-active gate (row 5 vs.\ row 4) gives $\Delta = 0.000$,
+$\Delta = -0.479$ ($U_a = 25.0$, $p \approx 0.0090$, $r \approx 1.00$); FreCoS's decay
+term on top of an already-active gate (row 5 vs.\ row 4) gives $\Delta = 0.000$,
 byte-identical. The gate accounts for the entire measurable stale-hit-rate improvement
 here, matching the design's own framing of the decay term as a soft prior: with the gate
 active, every entry eviction sees is already known-fresh, so the decay term has little
@@ -570,29 +621,29 @@ Latency/throughput are dominated by the simulated miss-cost distribution
 \toprule
 Metric & Row 2 (floor) & Row 5 (full stack) \\
 \midrule
-Extension overhead, mean (ms), measured & 0.468 & 0.478 \\
-Latency, mean (ms), simulation-dominated & 7.01 & 58.93 \\
-Latency, p95 (ms), simulation-dominated & 1.11 & 225.37 \\
-Latency, p99 (ms), simulation-dominated & 182.86 & 366.09 \\
-Throughput (queries/s), simulation-dominated & 142.7 & 17.0 \\
-Peak RSS (MB), median (95\% CI) & 650.6 (632.8, 716.3) & 649.5 (631.7, 688.2) \\
-CPU (\%), measured & 94.3 & 94.4 \\
+Extension overhead, mean (ms), measured & 0.348 & 0.348 \\
+Latency, mean (ms), simulation-dominated & 14.76 & 95.05 \\
+Latency, p95 (ms), simulation-dominated & 123.41 & 279.93 \\
+Latency, p99 (ms), simulation-dominated & 266.91 & 418.75 \\
+Throughput (queries/s), simulation-dominated & 67.7 & 10.5 \\
+Peak RSS (MB), median & 206.1 & 206.1 \\
+CPU (\%), measured & 91.9 & 91.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Peak RSS is statistically indistinguishable between rows, unsurprising since both run
-through the same real index on a shared development machine, not a dedicated
-benchmarking host. The mean-latency and p95/p99 gap (7ms to 59ms mean) is large because
-the gate converts a large fraction of hits into misses at this real hit rate, and a
-simulated miss costs far more than a real cache-side decision. Still
-simulation-dominated, not a claim about real end-to-end latency.
+Peak RSS is identical between rows, unsurprising since both run through the same real
+index on a shared development machine, not a dedicated benchmarking host. The
+mean-latency and p95/p99 gap (15ms to 95ms mean) is large because the gate converts a
+large fraction of hits into misses at this real hit rate, and a simulated miss costs
+far more than a real cache-side decision. Still simulation-dominated, not a claim
+about real end-to-end latency.
 
 No latency CDF accompanies Table~\ref{tab:latency}, though the guideline asks for one:
 miss latency is drawn from a seeded log-normal placeholder (Section~\ref{ssec:simmodel}),
 not measured from a real backend, so its distribution plot would show the shape of a
 random-number generator, not any real system's latency. The one measured, not simulated,
-latency quantity (extension overhead) does not vary enough across ten seeds to make a
+latency quantity (extension overhead) does not vary enough across five seeds to make a
 distribution plot informative beyond the mean already reported.
 
 \begin{figure}[H]
@@ -609,93 +660,109 @@ Row two, LFU with the gate disabled, is the floor of comparison.}
 Every ablation above ran with the gate on, which pre-filters stale entries before
 eviction ever sees them, leaving FreCoS's cost and decay terms nothing to differentiate
 on. This experiment runs gate off (NullGate), three eviction policies (FreCoS, LFU, LRU)
-x 10 seeds, at a cache size (100 entries) chosen after measuring that the main
-ablation's 1650-entry cache never fills under this workload's real hit rate (only
-339--474 distinct entries are ever needed with an unlimited cache). At 100 entries,
-1300+ misses occur per run, forcing real eviction pressure.
+x 5 seeds, at a cache size (25 entries) chosen after measuring that an unbounded cache
+at this scale needs at most 203 distinct entries, so 25 entries forces real eviction
+pressure. At 25 entries, 1300+ misses occur per run out of 1890 scored queries.
 
 \begin{table}[H]
 \centering
 \caption{With real eviction pressure, FreCoS beats the LFU floor on cost saved with a
-large, significant effect: the first result here where FreCoS's cost-awareness shows
-measurable work. LRU strictly dominates FreCoS: more cost saved and a lower
-stale-hit-rate, with no per-seed overlap on either metric.}
+large effect, not independently significant at $n=5$: the first result here where
+FreCoS's cost-awareness shows measurable, directionally consistent work. LRU strictly
+dominates FreCoS: more cost saved and a lower stale-hit-rate.}
 \label{tab:costaware}
 \begin{tabular}{lccc}
 \toprule
 Policy & Median cost saved (USD) & 95\% CI & Median stale-hit-rate \\
 \midrule
-FreCoS & 11.83 & (9.17, 13.46) & 0.491 \\
-LFU & 7.17 & (5.52, 8.27) & 0.676 \\
-LRU & 17.09 & (14.30, 21.06) & 0.227 \\
+FreCoS & 1.22 & (0.86, 2.21) & 0.421 \\
+LFU & 0.70 & (0.54, 1.46) & 0.526 \\
+LRU & 1.60 & (1.11, 2.62) & 0.063 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-FreCoS vs.\ LFU on cost saved: $U=94.0$, $p\approx0.0009$, $r\approx0.74$ (significant,
-FreCoS higher). FreCoS vs.\ LRU on cost saved: $U=11.0$, $p\approx0.0032$, $r\approx0.66$
-(significant, LRU higher). On stale-hit-rate, LRU is lower with no per-seed overlap
-(LRU's worst seed, 0.326, still beats FreCoS's best, 0.460): LRU wins on both metrics.
-This is not because LRU has any staleness mechanism (with no gate active it has none),
-but because on this trace, recency of access correlates with recency of write, so
-evicting the least-recently-accessed entry incidentally tends to evict the entry most
-likely to already be stale. LRU gets a freshness benefit for free, no staleness model,
-no calibration split, no gate, which is a genuine challenge to this project's premise
-that cost- and staleness-awareness are needed at all. What does hold up: FreCoS beats
-the pure-frequency LFU floor on cost saved with a large effect, the first experiment
-where FreCoS's cost term shows real, significant work. It does not establish that FreCoS
-beats LRU, and the report does not claim otherwise.
+FreCoS vs.\ LFU on cost saved: $U_a=21.0$, $p\approx0.076$, $r\approx0.68$ (not
+significant at $n=5$, FreCoS higher, large effect, direction and magnitude consistent
+with a significant $p\approx0.0009$ result at the pre-fix rerun's $n=10$). FreCoS vs.\
+LRU on cost saved: $U_a=7.0$, $p\approx0.251$, $r\approx-0.44$ (LRU higher, medium
+effect). On stale-hit-rate, LRU is strictly lower ($U_a=25.0$, $p\approx0.0090$,
+$r\approx1.00$, perfect separation): LRU wins on both metrics. This is not because LRU
+has any staleness mechanism (with no gate active it has none), but because on this
+trace, recency of access correlates with recency of write, so evicting the
+least-recently-accessed entry incidentally tends to evict the entry most likely to
+already be stale. LRU gets a freshness benefit for free, no staleness model, no
+calibration split, no gate, which is a genuine challenge to this project's premise
+that cost- and staleness-awareness are needed at all. What does hold up, directionally:
+FreCoS beats the pure-frequency LFU floor on cost saved with a large effect size, the
+first experiment where FreCoS's cost term shows real work, though the reduced seed
+count here does not independently confirm significance. It does not establish that
+FreCoS beats LRU, and the report does not claim otherwise.
 
 \subsection{Cache-size sweep and the correctness-efficiency trade-off}
 \label{ssec:sweeps}
 
 I swept cache size across 5 points spanning 5\%--80\% of the workload's distinct-answer
 working set, full stack throughout. Hit rate reaches its ceiling by 15\% of the working
-set (990 entries) and flattens completely from there; every point from 990 entries on
-produces identical per-seed hit counts. The knee falls at 990 entries, smaller than an
-earlier exact-match-index sweep found (1980 entries), since the semantic index's higher
-baseline hit rate means fewer distinct entries need to be held to saturate it. This
-cache size anchors every other sweep in this report.
+set (248 entries, at this 3,000-query trace scale) and flattens completely from there;
+every point from 248 entries on produces identical per-seed hit counts. The knee is
+computed directly from this sweep's own data by \texttt{analysis/fig3\_cache\_size.py}
+(the smallest cache size whose median hit rate is within 1\% of every larger size's),
+not a hardcoded constant: an earlier version of this figure hardcoded the knee at a
+stale value after a rerun had already moved it, and the figure's own caption and this
+sweep's committed summary silently disagreed for a full remediation pass before being
+caught. The knee's proportion of the working set (15\%) is unchanged from the pre-fix,
+4x-larger-scale rerun, a useful cross-check that this is a property of the workload's
+answer-diversity structure, not an artifact of trace size. This cache size anchors
+every other sweep in this report.
 
 The next sweep holds cache size fixed at that knee and sweeps the gate's target
 confidence level.
 
 \begin{table}[H]
 \centering
-\caption{Useful-fraction-of-hits (correct and non-stale, among served hits only; see
-Section~\ref{ssec:stats}) is zero or indistinguishable from zero through confidence
-0.90, small but non-zero at 0.95, and only substantial at 0.99, moving in lockstep with
-false-hit-rate. Stale-hit-rate falls 18-fold across the same range.}
+\caption{Useful-hit-rate (correct and non-stale, among served hits only; see
+Section~\ref{ssec:stats}) rises monotonically with TTL confidence, moving opposite to
+false-hit-rate. Stale-hit-rate falls to zero across the same range.}
 \label{tab:ttl}
 \footnotesize
 \begin{tabular}{lcccc}
 \toprule
-TTL conf.\ & Med.\ stale-hit-rate & Med.\ hit rate & Med.\ useful-frac.-of-hits & Med.\ false-hit-rate \\
+TTL conf.\ & Med.\ stale-hit-rate & Med.\ hit rate & Med.\ useful-hit-rate & Med.\ false-hit-rate \\
 \midrule
-0.80 & 0.133 & 0.684 & 0.000 & 0.975 \\
-0.90 & 0.071 & 0.562 & 0.000 & 0.969 \\
-0.95 & 0.039 & 0.473 & 0.000 (CI up to 0.008) & 0.962 \\
-0.99 & 0.007 & 0.269 & 0.068 & 0.920 \\
+0.80 & 0.142 & 0.486 & 0.042 & 0.946 \\
+0.90 & 0.068 & 0.336 & 0.080 & 0.911 \\
+0.95 & 0.046 & 0.231 & 0.139 & 0.857 \\
+0.99 & 0.000 & 0.079 & 0.458 & 0.542 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Useful-fraction-of-hits stays at or indistinguishable from zero through 0.90, still tiny
-at 0.95, and reaches only 0.068 at 0.99 (0.95 vs.\ 0.99: $U=0.0$, $p\approx0.00013$,
-adjusted $p\approx0.0023$, $r\approx0.86$, significant). This is a direct consequence of
-false-hit-rate sitting above 0.92 at every confidence level: almost every served hit is
-false regardless of TTL strictness, since false hits come from the semantic index's
-threshold match, not the gate. Raising confidence still buys a real, large
-stale-hit-rate reduction (18-fold), but ``the gate is nearly free,'' an earlier
-version's central claim, does not survive a real semantic index: this workload's
-false-hit problem dominates correctness at every confidence level.
+Useful-hit-rate rises from 0.042 at confidence 0.80 to 0.458 at confidence 0.99 (0.95
+vs.\ 0.99: $U_a=0.0$, $p\approx0.0090$, $r\approx-1.00$, perfect separation), read
+directly from the harness's \texttt{useful\_hit\_rate} metric (Section~\ref{ssec:stats})
+rather than reconstructed from possibly-overlapping stale/false counts, so every value
+above is a genuine per-hit count, not a clamped or floored one. false-hit-rate falls
+substantially over the same range (0.946 to 0.542): a tighter TTL evicts stale entries
+faster, shrinking the pool of cached entries available to match against, and with fewer
+(mostly correctly clustered) entries surviving, a smaller fraction of hits are false.
+This is a genuinely different, more encouraging story than an earlier version of this
+sweep found, where false-hit-rate sat above 0.92 at every confidence level and
+useful-fraction-of-hits was pinned at or near zero throughout: with cluster identity now
+substantially recoverable (Section~\ref{sec:brackets}), tightening the TTL measurably
+improves correctness on two axes at once, not just one.
 
 A third sweep varied cluster count at 5, 10, 20, and 50. hit\_rate and stale\_hit\_rate
-remain non-monotone with heavily overlapping CIs, matching an earlier exact-match-era
-version. cluster\_ari itself rises steadily with $K$ (0.022 at $K=5$ to 0.055 at $K=50$):
-more, smaller ground-truth clusters are marginally easier for k-means-on-embeddings to
-separate, though every value tested stays close to what a random assignment produces.
-This result sits in a supplementary table
+remain non-monotone with heavily overlapping CIs. cluster\_ari is itself non-monotone
+here too (0.451 at $K=5$, dropping to 0.272 at $K=20$, rising to 0.320 at $K=50$) --
+the opposite trend from an earlier, pre-fix version of this sweep, which found
+cluster\_ari rising steadily with $K$. This is not explained by topic-vocabulary
+exhaustion: the generator's 51 distinct cluster topics comfortably cover every $K$
+tested (5--50), so no cycling occurs. A more likely explanation is that more, smaller
+ground-truth clusters give k-means proportionally fewer calibration observations per
+cluster to converge on, at a fixed total trace size; at only 5 seeds per point,
+though, this is a plausible reading of a non-monotone, wide-CI result, not a confirmed
+effect. This result sits in a supplementary table
 (\texttt{analysis/figures/supplementary.csv}) rather than a headline figure, since it
 clears neither the effect-size nor confidence-interval bar the rest of this report's
 figures were held to.
@@ -706,15 +773,15 @@ figures were held to.
 \centering
 \includegraphics[width=\textwidth]{../analysis/figures/fig3_cache_size_knee.png}
 \caption{Hit rate against cache size, with the identified knee at 15\% of the
-working set (990 entries) marked.}
+working set (248 entries) marked.}
 \label{fig:cachesize}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\textwidth]{../analysis/figures/fig4_ttl_confidence_tradeoff.png}
-\caption{Stale-hit-rate and useful-fraction-of-hits against the gate's target confidence
-level. Stale-hit-rate falls 18x; useful-fraction-of-hits stays near zero through 0.95
-and only becomes substantial at 0.99, tracking false-hit-rate's decline.}
+\caption{Stale-hit-rate and useful-hit-rate against the gate's target confidence
+level. Stale-hit-rate falls to zero; useful-hit-rate rises from 0.04 at confidence 0.80
+to 0.46 at confidence 0.99, tracking false-hit-rate's decline.}
 \label{fig:tradeoff}
 \end{minipage}
 \end{figure}
@@ -722,15 +789,19 @@ and only becomes substantial at 0.99, tracking false-hit-rate's decline.}
 \section{Discussion}
 \label{sec:discussion}
 
-The central finding, Section~\ref{sec:brackets}, is a diagnosed measurement failure, not
-a verdict on per-cluster learning: there were no real clusters for it to exploit, so the
-ARI numbers there do not license a general claim. An earlier version reported the
-opposite conclusion under oracle-perfect cluster identity; that framing was not wrong
-given what it tested, but this remediation shows the question (does per-cluster fitting
-recover a rate well, given correct clusters) is not yet answerable end to end, because
-the harness meant to supply real clusters cannot do so on this workload's text.
+The central finding, Section~\ref{sec:brackets}, is that per-cluster staleness fitting
+beats pooling once clusters are genuinely recoverable from query text. An earlier
+version of this workload's canonical text differed across clusters only in two embedded
+numbers, which no general-purpose embedder could use to recover cluster identity
+(median adjusted Rand index 0.02--0.06), so that version's ``learned tracks global, not
+oracle'' finding was correct for the text it tested, but the text itself was the bug,
+not the clustering or calibration code. Fixing the text (a distinct topic phrase per
+cluster, a distinct aspect and qualifier phrase per answer) raises median cluster\_ari
+to 0.42 and restores the report's central claim: learned beats global with a large,
+significant effect, and sits significantly closer to oracle without fully reaching it,
+the expected shape for a fitter working from an imperfect but real signal.
 
-What survives: the validity gate still works correctly whether or not the cluster
+What survives regardless: the validity gate works correctly whether or not the cluster
 feeding it is accurate, since the same cluster is used consistently at calibration and
 serve time (Section~\ref{sec:ablation}). And FreCoS's cost-aware eviction term, tested
 here for the first time under conditions where eviction actually happens, beats a
@@ -741,16 +812,18 @@ correlate with recency of write on this trace, so LRU gets a freshness benefit f
 with no staleness model at all, a direct challenge to the premise that cost- and
 staleness-awareness are needed on recency-correlated workloads.
 
-A related finding shares the same root cause: this workload's construction cannot
-support a meaningful correctness evaluation once a real semantic index is used, because
-the canonical query template differs across clusters and answers only in two embedded
-numbers, which a real embedder cannot use to distinguish them. Roughly 92--97\% of hits
-served across every experiment, at every TTL confidence tested, are false hits: the
-cache confidently returns a real cached answer to a different question than the one
-asked. This is a claim about this workload's text, designed for an oracle-cluster world
-that never needed the text to be discriminable, not about semantic caches generally.
-Every number in Section~5 should be read next to its false-hit-rate until the text is
-redesigned or a real corpus replaces it.
+A related finding is only partially resolved by the text fix: false-hit-rate, a live
+metric once a real semantic index replaced exact-match lookup, remains high (median
+0.90--0.91) even after cluster identity became recoverable. Direct inspection explains
+why the remaining false hits differ in character from before the fix: two different
+aspects of the \emph{same} topic (e.g.\ two distinct Renaissance-art questions on
+different aspects) score 0.7--0.8 cosine similarity, close to the SemanticIndex's 0.8
+match threshold, since they are genuinely topically-related text to a general-purpose
+embedder. This is a more defensible failure mode than the old template's cross-cluster
+conflation -- a semantic cache confusing two questions about the same broad topic is a
+recognizable, realistic failure, not a workload-construction artifact -- but it means
+every number in Section~5 should still be read next to its false-hit-rate, not treated
+as a solved problem.
 
 A further, structural limitation present regardless of clustering or the index:
 stale-hit-rate is scored against \texttt{valid\_until}, the same ground-truth field that
@@ -766,36 +839,49 @@ prior-art comparator, Biton and Friedman's released policy nor Cortex's LCFU, wa
 against this workload, so the eviction axis is measured only against count-based
 policies and this project's own FreCoS variant.
 
+Every experiment in this rerun ran at 3,000 queries and 5 seeds, not the 12,000 queries
+and 10 seeds an earlier version used: rerunning the generator text fix at the original
+scale would cost roughly the same $\sim$9 hours the prior embedder-based rerun took,
+almost entirely spent on embedding, for a fix whose thesis-level conclusion does not
+depend on trace size. The reduced scale costs statistical power: several comparisons
+that were significant at $n=10$ (e.g.\ FreCoS vs.\ LFU on cost saved,
+Section~\ref{ssec:costaware}) show the same effect size and direction at $n=5$ but do
+not independently clear $p<0.05$. Every such case is reported with its effect size
+alongside the non-significant $p$-value, not silently as a null result.
+
 \section{Conclusion and future work}
 
 I set out to name a gap in how semantic caches are evaluated, stale-hit-rate, and build a
-system that closes it, with two components matching the two gaps in Section~1.1. Neither
-component's story is the one I expected: the gate holds up regardless of clustering
-quality, the per-cluster learning meant to sharpen it was never actually put to the test
-its own harness intended (Section~\ref{sec:discussion}), and the eviction term's
-cost-awareness, previously reported as contributing nothing, turns out to do real work
-once tested under conditions where eviction actually happens, though plain LRU still
-beats it here for an unmodeled reason (Section~\ref{ssec:costaware}).
+system that closes it, with two components matching the two gaps in Section~1.1. The
+gate holds up regardless of clustering quality; the per-cluster learning meant to
+sharpen it was, in an earlier version of this report, never actually put to the test
+its own harness intended, because the workload's query text broke clustering before
+calibration ever saw it. Fixing that text restores the report's central claim on a
+workload that genuinely tests it (Section~\ref{sec:discussion}). The eviction term's
+cost-awareness, previously reported as contributing nothing, does real work once
+tested under conditions where eviction actually happens, though plain LRU still beats
+it here for an unmodeled reason (Section~\ref{ssec:costaware}).
 
-The most consequential next step is redesigning W1's query text so cluster and answer
-identity are recoverable from a real embedder, not just a generator's internal label:
-the current template's reliance on embedded numbers alone breaks both clustering and the
-semantic index, from the same root cause. This fix is fully specified (a distinct topic
-phrase per cluster, a distinct entity phrase per answer\_id, replacing the two-number
-template in \texttt{workloads/w1\_synthetic/generator.py}'s canonical-text line) but not
-yet applied or rerun: the Phase 2 rerun that produced this version's numbers already
-took just under 9 hours, and changing the generator would require rerunning every
-experiment against new committed CSVs, which is future work, not a result claimed here.
-The same applies to excluding false hits from \texttt{cost\_saved\_usd}
-(Section~4): the metric change is prepared, not yet rerun. Running Biton and Friedman's
-policy and Cortex's LCFU directly would close the comparator gap now that a real index
-exists to run them against. Calibrating the generator against a real inference trace
-would strengthen external validity, and breaking the circularity between
-stale-hit-rate and its generator-supplied ground truth would be the strongest single
-improvement here. Dynamic re-clustering, a FreshCache-style probabilistic staleness
-budget, byte-budgeted eviction (where the size term removed from
-Equation~\ref{eq:value} would have real meaning), and admission control remain future
-work.
+The most consequential next step remaining is closing the false-hit-rate gap the text
+fix only partially closed: same-topic, different-aspect queries still score close to
+the SemanticIndex's match threshold, so a further vocabulary redesign (more
+semantically distant aspect phrasing, or a real corpus in place of a synthetic
+template) would likely reduce false-hit-rate further without needing another rerun of
+the clustering pipeline itself. Excluding false hits from \texttt{cost\_saved\_usd}
+(Section~4) is a prepared, straightforward metric change not applied in this rerun,
+since \texttt{cost\_saved\_usd} already carries an explicit false-hit caveat and the
+change would touch every committed \texttt{results.csv} again. Running the full
+experiment suite at the original 12,000-query, 10-seed scale would recover the
+statistical power the reduced scale costs (Section~\ref{sec:discussion}), now that the
+generator text is fixed and the $\sim$9-hour cost buys a valid result rather than
+revalidating a broken one. Running Biton and Friedman's policy and Cortex's LCFU
+directly would close the comparator gap now that a real index exists to run them
+against. Calibrating the generator against a real inference trace would strengthen
+external validity, and breaking the circularity between stale-hit-rate and its
+generator-supplied ground truth would be the strongest single improvement here.
+Dynamic re-clustering, a FreshCache-style probabilistic staleness budget,
+byte-budgeted eviction (where the size term removed from Equation~\ref{eq:value} would
+have real meaning), and admission control remain future work.
 
 \appendix
 \sloppy

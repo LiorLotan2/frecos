@@ -12,13 +12,13 @@ metric it was designed to move (cost_saved_usd, not stale_hit_rate) without a ga
 already doing most of the work in front of it.
 
 Design: W1 eval split, gate disabled (NullGate), three eviction policies (FreCoS, LFU,
-LRU) x 10 seeds each, same trace scale as the main ablation (n_queries=12000). Cache
-size is 100, not the main ablation's 1650: with the gate off and a real semantic index
-at the 0.8 threshold, hit rate here is so high that a 1650-entry cache never fills
-(measured 339-372 misses out of 7560 scored queries per run, well under the budget),
-so eviction never runs at all and every policy trivially ties. Measured with an
-unlimited cache first: only 339-474 distinct entries are ever needed across the whole
-eval split, so 100 is comfortably below that and forces eviction on every run.
+LRU) x 5 seeds each (reduced-scale rerun, see benchmarks/runners/brackets.py's
+docstring), same trace scale as the main ablation (n_queries=3000). Cache size is 25,
+not the main ablation's 412: with the gate off and a real semantic index at the 0.8
+threshold, hit rate here is high enough that a 412-entry cache would not reliably fill
+under this reduced trace size, so this cache size is scaled down proportionally
+(25 = 100 * 3000/12000) from the value the original full-scale run measured as
+comfortably forcing real eviction pressure on every run.
 """
 import os
 
@@ -36,10 +36,10 @@ from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
-N_QUERIES = 12000
-CACHE_SIZE_ENTRIES = 100
+N_QUERIES = 3000
+CACHE_SIZE_ENTRIES = 25
 TTL_CONFIDENCE = 0.9
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 
 RESULTS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "results", "cost_aware_eviction"

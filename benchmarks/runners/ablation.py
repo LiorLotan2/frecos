@@ -23,10 +23,12 @@ isn't a result.
 
 Same trace generation and cache size as the bracketing experiment (brackets.py):
 n_tenants=5, n_clusters=10,
-n_queries=12000, one fresh trace per seed (the pipeline is deterministic given a trace, so
+n_queries=3000, one fresh trace per seed (the pipeline is deterministic given a trace, so
 replaying one trace ten times would give ten identical rows and nothing to bootstrap
-over). cache_size_entries=1650, confirmed still 25% of the 6600 distinct answer_ids this
-n_queries produces (see verify_cache_size below).
+over). cache_size_entries=412, confirmed still 20-30% of the 1650 distinct answer_ids
+this n_queries produces (see verify_cache_size below). n_queries=3000 and 5 seeds, not
+the original 12000 and 10, per the reduced-scale rerun this experiment shares with
+brackets.py -- see that module's docstring for why.
 """
 import os
 
@@ -49,10 +51,10 @@ from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
-N_QUERIES = 12000
-CACHE_SIZE_ENTRIES = 1650
+N_QUERIES = 3000
+CACHE_SIZE_ENTRIES = 412
 TTL_CONFIDENCE = 0.9
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "results", "ablation")
 RESULTS_CSV = os.path.join(RESULTS_DIR, "results.csv")

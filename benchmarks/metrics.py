@@ -38,6 +38,28 @@ def is_false_hit(row: ServedQuery) -> bool:
     return is_hit(row) and row.served_answer_id != row.query_answer_id
 
 
+def is_useful_hit(row: ServedQuery) -> bool:
+    """A hit that is neither stale nor false: the cache returned the right answer and
+    it was still valid. is_stale_hit and is_false_hit are independent, overlapping
+    predicates (a hit can be both), so n_useful must be counted directly with this
+    predicate rather than derived as n_hits - n_stale - n_false, which double-subtracts
+    the overlap and can go negative once both rates are large (see
+    analysis/fig4_ttl_tradeoff.py's former max(..., 0) clamp, no longer needed once
+    useful_hit_rate below counts the union correctly)."""
+    return is_hit(row) and not is_stale_hit(row) and not is_false_hit(row)
+
+
+def useful_hit_rate(rows: Sequence[ServedQuery]) -> float:
+    """Fraction of served hits that were useful (correct and fresh), i.e. per-hit,
+    not per-scored-query -- see is_useful_hit's docstring for why this must be
+    computed directly rather than from n_hits - n_stale - n_false."""
+    n_hits = sum(1 for r in rows if is_hit(r))
+    if n_hits == 0:
+        return 0.0
+    n_useful = sum(1 for r in rows if is_useful_hit(r))
+    return n_useful / n_hits
+
+
 def hit_rate(rows: Sequence[ServedQuery]) -> float:
     if not rows:
         return 0.0

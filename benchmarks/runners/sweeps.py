@@ -1,27 +1,30 @@
 """Parameter sweeps: cache size, TTL confidence, cluster count K.
 
 Design: three axes, one at a time, no full factorial. Full stack throughout (gate on,
-FreCoS eviction), 10 seeds per point, one fresh trace per seed for the same reason the
-bracketing and ablation experiments generate fresh traces rather than replaying one
-trace ten times -- the pipeline is deterministic given a trace, so a repeated trace would
-give byte-identical "seeds" and nothing to bootstrap over.
+FreCoS eviction), 5 seeds per point (reduced-scale rerun, see benchmarks/runners/
+brackets.py's docstring), one fresh trace per seed for the same reason the bracketing
+and ablation experiments generate fresh traces rather than replaying one trace ten
+times -- the pipeline is deterministic given a trace, so a repeated trace would give
+byte-identical "seeds" and nothing to bootstrap over.
 
-Fixed defaults, held constant on the two axes not being swept: cache_size_entries=1980
-(30% of the 6600-answer_id working set at n_queries=12000, n_clusters=10), ttl_confidence=
+Fixed defaults, held constant on the two axes not being swept: cache_size_entries=495
+(30% of the 1650-answer_id working set at n_queries=3000, n_clusters=10), ttl_confidence=
 0.9, cluster_count_k=10. These match the bracketing experiment's calibration choices
-except cache size, which the bracketing experiment put at 1650 (25%) as a placeholder
-ahead of this sweep; 1980 (30%) is inside the same plausible mid-range and is one of this
+except cache size, which the bracketing experiment put at 412 (25%) as a placeholder
+ahead of this sweep; 495 (30%) is inside the same plausible mid-range and is one of this
 sweep's own cache-size points, so the cache-size axis includes its own default rather
 than defining a fourth value nobody else uses.
 
-Cache-size points: 330, 990, 1980, 3300, 5280 entries, i.e. 5%, 15%, 30%, 50%, 80% of the
-6600-entry working set, following the plan's own suggested spacing exactly.
+Cache-size points: 82, 248, 495, 825, 1320 entries, i.e. 5%, 15%, 30%, 50%, 80% of the
+1650-entry working set, following the plan's own suggested spacing exactly.
 
 Cluster-count-K sweep varies n_clusters at trace generation time (so ground-truth cluster
 structure actually changes) and passes the same k into cluster_count_k in the Config and
 into the eviction/gate machinery via the staleness table, which is fit per whatever
 cluster_ids appear in the trace -- no separate wiring needed, it follows from generate_trace
-using n_clusters consistently.
+using n_clusters consistently. The 1650-entry working set is the same at every K value
+tested here, since canonical count is max(n_clusters, round(n_queries*canonical_frac))
+and every K in CLUSTER_K_POINTS is far below round(3000*0.35)=1050.
 """
 import os
 
@@ -37,14 +40,14 @@ from benchmarks.harness import run_harness, write_csv_row
 from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
-N_QUERIES = 12000
-SEEDS = list(range(10))
+N_QUERIES = 3000
+SEEDS = list(range(5))
 
-DEFAULT_CACHE_SIZE_ENTRIES = 1980
+DEFAULT_CACHE_SIZE_ENTRIES = 495
 DEFAULT_TTL_CONFIDENCE = 0.9
 DEFAULT_N_CLUSTERS = 10
 
-CACHE_SIZE_POINTS = [330, 990, 1980, 3300, 5280]
+CACHE_SIZE_POINTS = [82, 248, 495, 825, 1320]
 TTL_CONFIDENCE_POINTS = [0.8, 0.9, 0.95, 0.99]
 CLUSTER_K_POINTS = [5, 10, 20, 50]
 

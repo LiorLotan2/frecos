@@ -30,6 +30,11 @@ embeddings determine cluster assignment and similarity ranks used throughout.
 
 ## Install
 
+Requires Python 3.10 or newer: `requirements.txt` pins `numpy==2.2.6`, whose wheels are
+only published for CPython 3.10+. On a stock macOS `python3` (often 3.9), `pip install
+-r requirements.txt` fails with a resolver error that does not name numpy as the cause;
+`make install` checks this and fails fast with a clearer message instead.
+
 With conda:
 
 ```
@@ -37,7 +42,8 @@ conda env create -f environment.yml
 conda activate frecos
 ```
 
-Or with a plain venv:
+Or with a plain venv (use a `python3.10+` interpreter explicitly if your default
+`python3` is older, e.g. `python3.13 -m venv .venv`):
 
 ```
 python3 -m venv .venv
@@ -113,20 +119,24 @@ Every runner now also embeds each distinct query text once via the vendored ONNX
 model (cached to disk under `.embedding_cache/`, gitignored, keyed by text hash),
 which dominates first-run wall-clock; a later experiment that reuses trace texts an
 earlier one already embedded is far faster than the numbers below suggest, since it
-hits a warm cache. Runtimes below are first-run, cold-cache, measured end to end on
-the machine recorded in each experiment's `env.json` (Apple M2 Pro, macOS); a
-from-scratch `make experiments` run on the same machine took just under 9 hours in
-total, almost all of it embedding.
+hits a warm cache. As of this report's most recent rerun (3,000 queries, 5 seeds per
+experiment, following the generator text fix described in `CHANGES.md` Phase 7), a
+full `make experiments` run with a warm embedding cache took under 30 minutes total on
+the machine recorded in each experiment's `env.json` (Apple M2 Pro, macOS). This was
+not independently re-timed against a fully empty `.embedding_cache/`: the earlier,
+12,000-query/10-seed version of this table reported a ~9-hour cold-cache total, and
+that figure has not been revalidated at the reduced scale this rerun uses -- treat the
+30-minute figure as a warm-cache lower bound, not a cold-start estimate.
 
-| Command | Output CSV | Report table/figure | First-run wall-clock |
-|---|---|---|---|
-| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, `tab:brackets-counts`, Figure `fig:brackets` | ~1h 12m |
-| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` | ~5m |
-| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) | ~9m |
-| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Discussion §5.1 (Weibull attempt, not tabled) | ~3m |
-| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` | ~1h 13m |
-| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` | ~5h 41m (cluster_k varies n_clusters, which changes the trace's canonical-query text and so cannot reuse most of the embedding cache the other experiments built) |
-| `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Discussion §5.3 (gate-off cost-aware eviction test) | ~3m (fully warm cache) |
+| Command | Output CSV | Report table/figure |
+|---|---|---|
+| `make exp-brackets` | `results/brackets/results.csv` | Table `tab:brackets`, Figure `fig:brackets` |
+| `make exp-ablation` | `results/ablation/results.csv` | Table `tab:ablation`, `tab:latency`, Figure `fig:ablation` |
+| `make exp-brackets-calibration-sweep` | `results/brackets/calibration_sweep/results.csv` | Figure `fig:brackets` (sparser-calibration series) |
+| `make exp-brackets-misspecified` | `results/brackets/misspecified/results.csv` | Table `tab:misspec` |
+| `make exp-brackets-mixture` | `results/brackets/mixture/results.csv` | Table `tab:misspec` |
+| `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` (cluster_k varies n_clusters, which changes the trace's canonical-query text and so cannot reuse most of the embedding cache the other experiments built) |
+| `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Table `tab:costaware` |
 
 `make experiments` runs all seven sequentially. (An earlier eighth runner,
 `benchmarks/runners/size_term_isolation.py`, was removed after its own finding -- the
@@ -139,7 +149,14 @@ see `gptcache_ext/eviction/frecos.py`'s module docstring and `CHANGES.md`.)
 hand-edited), using the exact `matplotlib` version pinned in `requirements.txt` --
 a different version renders pixel-different PNGs even from identical data, which is
 why the CI figures-consistency check installs from `requirements.txt` before
-regenerating. `make report` compiles `report/report.tex` to `report/report.pdf` via
+regenerating. That check is also platform-dependent: even with the pinned
+`matplotlib` version, regenerating on macOS produces PNGs that differ byte-for-byte
+from the Linux-rendered ones committed here (font rasterization differs by platform),
+so `figures-consistency` is only verified to pass on the Linux CI runner, not on every
+`make figures` invocation. `analysis/figures/supplementary.csv`, by contrast, does
+reproduce byte-identically on macOS too, since it is plain-text numeric output with
+no font rendering involved -- the stronger reproducibility claim of the two artifacts
+`make figures` produces. `make report` compiles `report/report.tex` to `report/report.pdf` via
 `tectonic` (not `pdflatex`; installed separately, e.g. `brew install tectonic` or
 see https://tectonic-typesetting.github.io/, not bundled by `make install`).
 

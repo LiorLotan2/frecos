@@ -11,11 +11,18 @@ replaying the same trace ten times would produce byte-identical rows for every "
 there would be nothing to bootstrap over. Generating one fresh trace per seed is the only
 way a 10-seed design does anything.
 
-Cache size: n_queries=12000 with the generator's default stream fractions yields 6600
-distinct answer_ids (4200 canonical + 2400 longtail; paraphrases and repeats reuse existing
+Cache size: n_queries=3000 with the generator's default stream fractions yields 1650
+distinct answer_ids (1050 canonical + 600 longtail; paraphrases and repeats reuse existing
 answer_ids so they don't add to this count, and this count is deterministic given n_queries,
-independent of seed). 1650 entries is 25% of that, inside the 20-30% range chosen as a
+independent of seed). 412 entries is 25% of that, inside the 20-30% range chosen as a
 placeholder mid-sweep point ahead of the actual cache-size sweep.
+
+n_queries=3000 and 5 seeds (not the original 12000 and 10) since this rerun follows the
+generator text fix in workloads/w1_synthetic/generator.py (see CHANGES.md): the fix
+invalidated every previously committed results.csv, and rerunning at the original scale
+was judged not worth the ~9-hour, almost-entirely-embedding cost for validating a fix
+whose thesis-level conclusion (does per-cluster fitting recover a rate well, given
+clusters a real embedder can actually separate) does not depend on trace size.
 """
 import os
 
@@ -34,10 +41,10 @@ from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
-N_QUERIES = 12000
-CACHE_SIZE_ENTRIES = 1650
+N_QUERIES = 3000
+CACHE_SIZE_ENTRIES = 412
 TTL_CONFIDENCE = 0.9
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 LAMBDA_SOURCES = ["global", "learned", "oracle"]
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "results", "brackets")

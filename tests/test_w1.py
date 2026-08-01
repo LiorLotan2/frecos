@@ -148,3 +148,31 @@ def test_different_seeds_produce_different_traces():
 def test_valid_until_after_t(trace):
     for row in trace:
         assert row["valid_until"] >= row["t"] or math.isinf(row["valid_until"])
+
+
+def test_canonical_query_text_is_cluster_separable_under_a_real_embedder():
+    """Regression test for the exact bug this generator once had: the canonical query
+    template used to differ across clusters only in two embedded numbers
+    ("topic {cluster_id}-{answer_id}"), which a general-purpose sentence embedder
+    cannot use to recover cluster identity (adjusted Rand index 0.02-0.06, at
+    random-assignment level, see CHANGES.md). This asserts the real embedder-based
+    clustering pipeline now clears 0.5 -- not just that the template text differs
+    string-wise, which the mostly-shared "What is the current status of ... for ...?"
+    prefix would pass trivially even under the old bug.
+
+    Downloads GPTCache's default ONNX embedder on first run (network required,
+    cached afterward under /tmp so CI's own run and this test never redownload against
+    each other); not marked slow/skipped, since benchmarks.experiment_smoke already
+    requires the same network access on every CI run.
+    """
+    from gptcache_ext.staleness.assign_real_clusters import assign_real_clusters
+    from gptcache_ext.staleness.embedder import CachedEmbedder
+
+    embedder = CachedEmbedder("/tmp/frecos_test_embedding_cache")
+    trace = generate_trace(n_tenants=5, n_clusters=10, n_queries=3000, seed=0)
+    ari = assign_real_clusters(trace, embedder, n_clusters=10, seed=0)
+    assert ari > 0.5, (
+        f"cluster_ari={ari:.4f} is at or below the random-assignment level this test "
+        f"guards against; the canonical query template may have regressed to text a "
+        f"real embedder cannot separate by cluster"
+    )

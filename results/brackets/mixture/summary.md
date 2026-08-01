@@ -2,56 +2,53 @@
 
 ## Verdict
 
-Rerun with real embedder-based clustering and a semantic index. Same pattern as every
-other bracket-style experiment in this rerun: learned tracks global (p ~ 0.65,
-indistinguishable), not oracle (p ~ 0.0002, r ~ 0.83). This adversarial mixture -- true
-half-life drawn from a bimodal two-rate mixture, deliberately hard for a single-rate
-MLE -- was designed to test calibration quality, but clustering quality dominates here
-too: cluster_ari is ~0.037, in the same low range as every other experiment, and it is
-determined entirely by the query-text embedding step, independent of how half_life is
-drawn.
+Rerun with the generator text fix (see results/brackets/summary.md for the root cause
+and fix). Median cluster_ari is 0.40, close to the main run's 0.42 (a fresh trace at
+this half_life_mode draws a substantially different rng sequence than the main run, so
+distinct query texts differ, but the same vocabulary design keeps cluster signal
+comparable). learned (median stale_hit_rate 0.154) is lower than global (0.189) with a
+large effect, not significant at n=5 (p ~ 0.076, r ~ -0.68); learned is significantly
+below oracle (0.120, p ~ 0.028, r ~ 0.84). Same qualitative pattern as the main run and
+the Weibull misspecification check: per-cluster fitting helps, does not close the gap
+to oracle, and the effect is directionally consistent but under-powered at 5 seeds for
+the learned-vs-global comparison specifically.
 
 ## Setup
 
 Same design as the main bracketing experiment and the misspecified run: W1 eval split,
-gate enabled, FreCoS eviction, cache_size_entries=1650, ttl_confidence=0.9,
-cluster_count_k=10, three lambda_source values x 10 seeds. The only design change:
+gate enabled, FreCoS eviction, cache_size_entries=412, ttl_confidence=0.9,
+cluster_count_k=10, three lambda_source values x 5 seeds. The only design change:
 `generate_trace(..., half_life_mode="mixture")` draws each cluster's true half-life
 from a 50/50 mixture of two exponentials (one-fifth and 1.8x the cluster's mean scale).
-Real clustering (gptcache_ext.staleness.assign_real_clusters) and
-benchmarks.semantic_index.SemanticIndex (0.8 threshold) replace the prior oracle-cluster
-+ exact-match setup.
+n_queries=3000, matching the reduced-scale rerun.
 
 ## Bootstrap method
 
-Percentile bootstrap over the 10 per-seed values in each lambda_source group, 10,000
+Percentile bootstrap over the 5 per-seed values in each lambda_source group, 10,000
 resamples, median of each resample, 95% CI from the 2.5th/97.5th percentiles. Python
 stdlib random, seeded 12345.
 
 ## Results
 
-| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | 95% CI | median n_hits | median false_hit_rate |
-|---|---|---|---|---|---|---|
-| global | 0.1510 | (0.1218, 0.1659) | 14.20 | (10.97, 16.26) | 4352.0 | 0.970 |
-| learned | 0.1423 | (0.1216, 0.1613) | 14.43 | (10.87, 16.21) | 4307.5 | 0.970 |
-| oracle | 0.0949 | (0.0910, 0.1011) | 14.92 | (11.50, 17.05) | 4332.5 | 0.972 |
+| lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
+|---|---|---|---|---|---|
+| global | 0.1889 | (0.1555, 0.2235) | 1.99 | 0.395 | 0.891 |
+| learned | 0.1542 | (0.1244, 0.2193) | 1.97 | 0.395 | 0.896 |
+| oracle | 0.1195 | (0.0992, 0.1447) | 1.95 | 0.395 | 0.908 |
 
 Mann-Whitney U, stale_hit_rate:
 
-- learned vs global: U = 44.0, p ~ 0.650, r ~ 0.10 (not significant)
-- learned vs oracle: U = 99.0, p ~ 0.0002, r ~ 0.83 (significant, large effect)
-- global vs oracle: U = 99.0, p ~ 0.0002, r ~ 0.83 (significant, large effect)
+- learned vs global: U_a=4.0, p ~ 0.076, r ~ -0.68 (not significant at n=5, large effect direction matches main run)
+- learned vs oracle: U_a=23.0, p ~ 0.028, r ~ 0.84 (significant, large effect)
+- global vs oracle: U_a=25.0, p ~ 0.009, r ~ 1.00 (significant, perfect separation)
 
 ## Takeaway for the report
 
-Before this rerun, this was the one experiment where learned showed daylight from
-oracle for the first time (rather than tracking it near-exactly), which was read as the
-first sign that the fitter's exponential assumption had a measurable cost under a
-genuinely adversarial true distribution. Under real clustering, that reading no longer
-holds: learned is far from oracle here for the same structural reason it is far from
-oracle everywhere else in this rerun (clustering, not calibration, is the bottleneck),
-not because the mixture model is specifically harder to fit than the well-specified or
-Weibull cases. All three bracket-style misspecification checks (well-specified,
-Weibull, mixture) now show the identical qualitative pattern, which is itself
-informative: the clustering-quality effect dominates regardless of what half-life
-distribution the generator draws from.
+The adversarial mixture (a genuinely harder case for a single-rate maximum-likelihood
+fit than the well-specified or Weibull cases) shows the highest absolute
+stale-hit-rate of the three misspecification checks at every lambda_source, as
+expected -- the fitter's exponential assumption really is wrong here, and it costs
+something. The relative pattern (learned between global and oracle) survives this
+harder case, same as it survives the Weibull case, confirming clustering quality and
+half-life misspecification are separate, additive sources of error rather than one
+masking the other.

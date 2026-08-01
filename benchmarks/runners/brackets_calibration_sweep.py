@@ -7,10 +7,15 @@ floor. At that sample size the per-cluster MLE recovers the true generator lambd
 exactly, so learned mode is statistically indistinguishable from oracle mode (Mann-Whitney
 p ~ 0.94) rather than sitting strictly between global and oracle as Gate 3 wants.
 
-This script reruns the identical design (global/learned/oracle lambda_source x 10 seeds,
+This script reruns the identical design (global/learned/oracle lambda_source x 5 seeds,
 gate enabled, FreCoS eviction) at a much smaller trace size, chosen so calibration
 observations per cluster land close to the n_obs=30 floor instead of far above it. See
 results/brackets/calibration_sweep/summary.md for the actual n_obs values and verdict.
+n_queries=1800 here is independent of the reduced-scale rerun in brackets.py (that
+rerun uses 3000): this script was already deliberately smaller before the generator
+text fix, to test the calibration-scarcity axis, not to match the main bracketing
+run's trace size. Only the seed count was reduced (10 -> 5), matching every other
+experiment's reduced-scale rerun (see brackets.py's docstring for why).
 """
 import os
 
@@ -32,7 +37,7 @@ N_CLUSTERS = 10
 N_QUERIES = 1800
 CACHE_SIZE_ENTRIES = 248
 TTL_CONFIDENCE = 0.9
-SEEDS = list(range(10))
+SEEDS = list(range(5))
 LAMBDA_SOURCES = ["global", "learned", "oracle"]
 
 RESULTS_DIR = os.path.join(
