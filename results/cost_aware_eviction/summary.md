@@ -37,7 +37,7 @@ Python stdlib random, seeded 12345.
 
 | Row | median cost_saved_usd | 95% CI | median stale_hit_rate | median hit_rate |
 |---|---|---|---|---|
-| FreCoS | 7.08 | (5.82, 8.52) | 0.491 | 0.847 |
+| FreCoS | 11.83 | (9.17, 13.46) | 0.491 | 0.847 |
 | LFU | 7.17 | (5.52, 8.27) | 0.676 | 0.816 |
 | LRU | 17.09 | (14.30, 21.06) | 0.227 | 0.841 |
 
