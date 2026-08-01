@@ -136,8 +136,12 @@ see `gptcache_ext/eviction/frecos.py`'s module docstring and `CHANGES.md`.)
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is
-hand-edited). `make report` compiles `report/report.tex` to `report/report.pdf`
-(requires a local `pdflatex`, not installed in this environment by `make install`).
+hand-edited), using the exact `matplotlib` version pinned in `requirements.txt` --
+a different version renders pixel-different PNGs even from identical data, which is
+why the CI figures-consistency check installs from `requirements.txt` before
+regenerating. `make report` compiles `report/report.tex` to `report/report.pdf` via
+`tectonic` (not `pdflatex`; installed separately, e.g. `brew install tectonic` or
+see https://tectonic-typesetting.github.io/, not bundled by `make install`).
 
 `make experiments && make figures && make report`, run in that order from a clean
 clone, reproduces every artifact this report cites.

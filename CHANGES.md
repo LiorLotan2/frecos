@@ -204,24 +204,53 @@ before trusting any of them.
   did not have room for (see Phase 3.1 above for the same constraint). Applying and
   rerunning both together is the single highest-value next step, named as such in the
   Conclusion.
-- **`make report`:** switched from `pdflatex` (not installed in this environment, so
-  untested here) to `tectonic`, verified to compile `report.tex` to a 16-page PDF with
-  only benign Overfull/Underfull hbox warnings.
+- **`make report`:** the Makefile's `report` target now calls `tectonic`, not
+  `pdflatex` (not installed in the environment this remediation ran in). Verified to
+  compile `report.tex` to a 16-page PDF with only benign Overfull/Underfull hbox
+  warnings. (Superseded by Phase 6 below: the report is now 12 pages.)
+
+## Phase 6 — CI failures, a real data error, and the page-count overshoot
+
+Follow-up pass, triggered by a review of this branch's own CI runs and report content
+against the grading rubric. Everything below was verified directly, not asserted.
+
+- **`figures-consistency` CI job (root-caused, not just retried):** two independent,
+  deterministic causes, both confirmed by installing the exact pinned dependency
+  versions in a clean venv and rerunning `make figures`.
+  1. The four committed PNGs were rendered with `matplotlib==3.11.1` (visible in each
+     PNG's own metadata), but `requirements.txt` pins `3.10.9` — the version CI
+     actually installs. Regenerating with the pinned version always produces a
+     pixel-different PNG. Fixed by regenerating and committing the PNGs under the
+     pinned version, so `make figures` is now idempotent against a clean install.
+  2. `analysis/make_supplementary.py` wrote `supplementary.csv` via `csv.writer`
+     without `lineterminator="\n"`, so it always emits `\r\n` regardless of platform,
+     while the committed file has plain `\n`. Fixed by passing
+     `lineterminator="\n"` explicitly; the CSV's actual values were already correct,
+     only the line endings were wrong.
+
+  Both bugs were platform-independent and would have failed on every future CI run and
+  every reviewer's clean clone, not just intermittently.
+- **Data error in `results/cost_aware_eviction/summary.md`:** the Results table listed
+  FreCoS's median `cost_saved_usd` as `7.08`, contradicting both this same file's own
+  prose two paragraphs above it (`11.83`) and the number in `report/report.tex` Table
+  `tab:costaware` (`11.83`, correct). Recomputing directly from
+  `results/cost_aware_eviction/results.csv` confirms `11.83` (95% CI `9.17, 13.46`) is
+  right; fixed the table. All nine other `summary.md` files were checked the same way
+  and found consistent with their CSVs — this was an isolated transcription error, not
+  a pattern.
+- **Report page count (12 pages, not 16):** the previous pass left the report at 16
+  pages against the 8--12 page guideline, worse than its own claim of "~13.2 pages."
+  Fixed by: dropping the font from 11pt to 10pt (still within the guideline's ≥10pt
+  floor); placing Figures 3 and 4 side by side in one float instead of stacked;
+  tightening the Discussion/Conclusion overlap, which restated the same three findings
+  twice; removing an unused bibliography entry (`squad2018`, never cited in the body);
+  and tightening bibliography item spacing. No table, figure, or number was cut.
 
 ## What was not fixed, and why
 
 - **Seed count (Phase 3.1):** left at 10, not raised to 30. See above — compute cost of
   the Phase 2 rerun (~9 hours) made a further 3× rerun impractical within this session;
   flagged rather than silently skipped.
-- **Page count (Phase 4 item 5):** body is ~13.2 pages against a 12-page cap. See above.
-- **`make report` end-to-end:** not verified with `pdflatex` specifically, since it is
-  not installed in this sandbox. Verified instead with `tectonic` (a from-scratch LaTeX
-  engine that fetches its own package set), which compiled the same `report.tex`
-  successfully to `report.pdf` with no errors, only minor `Overfull`/`Underfull hbox`
-  typesetting warnings. The Makefile's `report` target still calls `pdflatex` (the
-  standard, more commonly available tool) twice, for cross-references; this was not
-  changed to `tectonic` since `pdflatex` is the tool a grader is more likely to already
-  have.
 - **`results/ablation/size_term_isolation/`:** kept as a historical, no-longer-regenerable
   artifact (its runner and the size term it tested no longer exist), documented as such
   in the README and in `gptcache_ext/eviction/frecos.py`'s module docstring, per the
