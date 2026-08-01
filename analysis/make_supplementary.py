@@ -18,7 +18,7 @@ def main():
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     out_path = FIGURES_DIR / "supplementary.csv"
     with open(out_path, "w", newline="") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, lineterminator="\n")
         writer.writerow(["source", "cluster_count_k", "metric", "median", "ci_lo", "ci_hi"])
         for k in K_VALUES:
             hit_med, hit_lo, hit_hi = bootstrap_median_ci(hit_groups[k])

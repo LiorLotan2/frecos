@@ -1,21 +1,21 @@
-"""A8 bracketing experiment: does a learned per-cluster staleness lambda land between the
+"""Bracketing experiment: does a learned per-cluster staleness lambda land between the
 global (pooled) and oracle (ground-truth) brackets on stale-hit-rate?
 
-Design (implementation-plan.md sec 4/A8, design-v2.md sec 5.3): W1 eval split, three
-lambda_source values (global, learned, oracle) crossed with 10 seeds each, gate enabled,
-FreCoS eviction, cache size fixed at one point. Everything else held constant except seed.
+Design: W1 eval split, three lambda_source values (global, learned, oracle) crossed with
+10 seeds each, gate enabled, FreCoS eviction, cache size fixed at one point. Everything
+else held constant except seed.
 
 Ten distinct traces, one per seed, not one trace replayed ten times. The pipeline is fully
 deterministic given a trace (eviction and the gate have no randomness of their own), so
 replaying the same trace ten times would produce byte-identical rows for every "seed" and
 there would be nothing to bootstrap over. Generating one fresh trace per seed is the only
-way the 10-seed design in the plan does anything.
+way a 10-seed design does anything.
 
 Cache size: n_queries=12000 with the generator's default stream fractions yields 6600
 distinct answer_ids (4200 canonical + 2400 longtail; paraphrases and repeats reuse existing
 answer_ids so they don't add to this count, and this count is deterministic given n_queries,
-independent of seed). 1650 entries is 25% of that, inside the 20-30% range this card asks
-for as a placeholder mid-sweep point ahead of A10's actual cache-size sweep.
+independent of seed). 1650 entries is 25% of that, inside the 20-30% range chosen as a
+placeholder mid-sweep point ahead of the actual cache-size sweep.
 """
 import os
 
@@ -27,7 +27,10 @@ from gptcache_ext.staleness.fitter import fit_staleness_table
 from gptcache_ext.staleness.gate import TTLGate
 from workloads.w1_synthetic.generator import cluster_params, generate_trace
 
+from benchmarks.embedding_pipeline import SEMANTIC_THRESHOLD, get_shared_embedder, prepare_trace
+from benchmarks.capture_env import write_env_json
 from benchmarks.harness import run_harness, write_csv_row
+from benchmarks.semantic_index import SemanticIndex
 
 N_TENANTS = 5
 N_CLUSTERS = 10
@@ -57,6 +60,9 @@ def run_one(lambda_source, seed):
     trace = generate_trace(
         n_tenants=N_TENANTS, n_clusters=N_CLUSTERS, n_queries=N_QUERIES, seed=seed
     )
+    cluster_ari = prepare_trace(
+        trace, n_clusters=N_CLUSTERS, seed=seed, use_true_clusters=(lambda_source == "oracle")
+    )
 
     fit_kwargs = {}
     if lambda_source == "oracle":
@@ -76,15 +82,18 @@ def run_one(lambda_source, seed):
         lambda_source=lambda_source,
         seed=seed,
     )
+    index = SemanticIndex(CACHE_SIZE_ENTRIES, eviction_policy, get_shared_embedder())
     run_id = f"brackets-w1-{lambda_source}-seed{seed}"
     return run_harness(
         trace, config, seed=seed, gate=gate, eviction_policy=eviction_policy,
         staleness_table=staleness_table, workload="w1", run_id=run_id,
+        index=index, threshold=SEMANTIC_THRESHOLD, cluster_ari=cluster_ari,
     )
 
 
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    write_env_json(RESULTS_DIR)
     if os.path.exists(RESULTS_CSV):
         os.remove(RESULTS_CSV)
 

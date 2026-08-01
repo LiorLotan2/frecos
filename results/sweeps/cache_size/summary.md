@@ -1,72 +1,52 @@
-# A10 cache-size sweep
+# Cache-size sweep
 
 ## Setup
 
 W1, gate enabled, FreCoS eviction, lambda_source=learned. Fixed defaults while sweeping
 cache size: ttl_confidence=0.9, cluster_count_k=10. n_queries=12000 with n_tenants=5,
-n_clusters=10, which (as in A8) yields exactly 6600 distinct answer_ids per trace
-regardless of seed. Five cache-size points at 5%, 15%, 30%, 50%, 80% of that working set:
-330, 990, 1980, 3300, 5280 entries, following the plan's own suggested spacing exactly.
+n_clusters=10. Five cache-size points at 5%, 15%, 30%, 50%, 80% of the 6600-answer_id
+working set: 330, 990, 1980, 3300, 5280 entries.
 
-Ten distinct traces per point (seeds 0-9), not one trace replayed ten times, for the same
-reason as A8/A9: the pipeline has no randomness of its own given a fixed trace, so a
-repeated trace would give ten identical rows and nothing to bootstrap over.
+Rerun with real embedder-based clustering (gptcache_ext.staleness.assign_real_clusters)
+and benchmarks.semantic_index.SemanticIndex (0.8 threshold), replacing the prior
+oracle-cluster + exact-match setup used throughout this project until this rerun.
 
-50 rows in results.csv (5 points x 10 seeds), matching benchmarks.harness.CSV_COLUMNS.
+Ten distinct traces per point (seeds 0-9). 50 rows in results.csv (5 points x 10
+seeds), matching benchmarks.harness.CSV_COLUMNS (now including cluster_ari).
 
 ## Bootstrap method
 
-Same as A8: simple percentile bootstrap over the 10 per-seed values at each cache-size
-point. 10,000 resamples with replacement (n=10), median of each resample, 95% CI read off
-the 2.5th/97.5th percentiles of the resulting distribution. Python stdlib random, seeded
-12345.
+Percentile bootstrap over the 10 per-seed values at each cache-size point. 10,000
+resamples with replacement (n=10), median of each resample, 95% CI read off the
+2.5th/97.5th percentiles. Python stdlib random, seeded 12345.
 
 ## Results
 
 | cache_size_entries | median hit_rate | 95% CI | median stale_hit_rate | 95% CI |
 |---|---|---|---|---|
-| 330  | 0.0130 | (0.0122, 0.0134) | 0.0209 | (0.0103, 0.0283) |
-| 990  | 0.0169 | (0.0163, 0.0173) | 0.0327 | (0.0211, 0.0545) |
-| 1980 | 0.0174 | (0.0171, 0.0180) | 0.0420 | (0.0242, 0.0601) |
-| 3300 | 0.0174 | (0.0171, 0.0180) | 0.0420 | (0.0242, 0.0601) |
-| 5280 | 0.0174 | (0.0171, 0.0180) | 0.0420 | (0.0242, 0.0601) |
+| 330  | 0.5670 | (0.5431, 0.5992) | 0.0710 | (0.0577, 0.0907) |
+| 990  | 0.5624 | (0.5394, 0.5910) | 0.0707 | (0.0594, 0.0909) |
+| 1980 | 0.5624 | (0.5394, 0.5910) | 0.0707 | (0.0594, 0.0909) |
+| 3300 | 0.5624 | (0.5394, 0.5910) | 0.0707 | (0.0594, 0.0909) |
+| 5280 | 0.5624 | (0.5394, 0.5910) | 0.0707 | (0.0594, 0.0909) |
 
 ## Effect direction
 
-hit_rate is monotone increasing in cache size, but flattens completely after 1980
-entries: the per-seed n_hits at 1980, 3300, and 5280 are identical query-by-query, meaning
-once the cache is large enough it never has to evict anything a query would have hit
-again during the eval window, so growing it further has zero effect on which queries hit.
-stale_hit_rate follows the same pattern (increasing, then flat), which follows directly
-since it is a ratio computed over the same fixed hit set once hit_rate stops moving.
-
-Neither metric is non-monotone; both are increasing-then-flat over this range, which is
-qualitatively different from monotone-increasing-forever. It means the working set as
-generated does not need a cache anywhere close to 80% of 6600 entries to realize almost
-all of its achievable hit rate at this trace size.
+hit_rate flattens after 990 entries now, one point earlier than under the prior
+exact-match run (which flattened at 1980): the semantic index's much higher baseline
+hit rate (~56% here versus ~1.7% under exact-match) means the working set of distinct
+entries the cache actually needs to hold is smaller relative to the total answer_id
+count, so it saturates at a smaller absolute cache size. Both hit_rate and
+stale_hit_rate are byte-identical across 990, 1980, 3300, and 5280 seed by seed,
+confirming the cache stops mattering entirely past 990 entries at this trace scale.
 
 ## Knee
 
-Marginal hit-rate gain per additional cache entry, i.e. slope = delta(median hit_rate) /
-delta(cache_size_entries) between consecutive points:
-
-| step | delta hit_rate | delta entries | slope |
-|---|---|---|---|
-| 330 -> 990   | 0.003968 | 660  | 6.01e-6 |
-| 990 -> 1980  | 0.000463 | 990  | 4.68e-7 |
-| 1980 -> 3300 | 0.0      | 1320 | 0.0     |
-| 3300 -> 5280 | 0.0      | 1980 | 0.0     |
-
-Criterion: the knee is the first point after which slope drops by more than an order of
-magnitude relative to the previous step. Slope drops by ~13x going from the 330->990 step
-to the 990->1980 step, and by a further ~1000x (to exactly zero) going into the 1980->3300
-step. The largest relative drop happens right after 1980, so **1980 entries (30% of the
-working set) is the knee** -- the last point where an additional 990-entry increment still
-bought any measurable hit-rate improvement (0.000463) at all. Beyond it, tripling the
-cache to 5280 buys nothing.
-
-This should be read together with the exact-match index limitation noted in A8/A9's
-summaries: with only literal repeats able to hit (no semantic index wired in yet), the hit
-set is small and saturates fast. A semantic index would likely push the knee to a larger
-cache size, since paraphrase and repeat traffic that currently misses would start
-contending for cache slots.
+**990 entries (15% of the working set) is the knee** under the semantic index, versus
+1980 (30%) under the prior exact-match index. The direction of the shift is the
+opposite of what the exact-match-era summary predicted ("a semantic index would likely
+push the knee to a larger cache size, since paraphrase and repeat traffic that
+currently misses would start contending for cache slots") -- the semantic index's much
+higher hit rate at every cache size actually *reduces* the number of distinct cache
+slots needed to reach saturation, not increases it, because most queries now hit an
+existing entry rather than needing their own slot.

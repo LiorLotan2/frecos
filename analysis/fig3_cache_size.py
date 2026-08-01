@@ -31,7 +31,7 @@ def main():
     ax.set_xlabel("cache size (entries)")
     ax.set_ylabel("hit rate (median, 95% CI)")
     fig.tight_layout()
-    out = save_figure(fig, "fig4_cache_size_knee.png")
+    out = save_figure(fig, "fig3_cache_size_knee.png")
     print(out)
 
 
