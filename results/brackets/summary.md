@@ -2,42 +2,35 @@
 
 ## Verdict
 
-Rerun with the generator text fix (workloads/w1_synthetic/generator.py, see
-CHANGES.md): canonical query text now carries a distinct topic phrase per cluster and
-a distinct aspect/qualifier phrase per answer, replacing the old two-digit-suffix
-template that a real embedder could not use to recover cluster identity at all. Median
-cluster_ari rises from 0.036 (pre-fix) to 0.42 across this rerun's 15 runs -- a real,
-substantial cluster signal, not a perfect one. With that signal in place, the original
-bracketing pattern is restored: learned (median stale_hit_rate 0.068) sits significantly
-below global (0.091, p ~ 0.028, r ~ -0.84) and significantly above oracle (0.048,
-p ~ 0.016, r ~ 0.92) -- per-cluster fitting beats pooling, and does not fully close the
-gap to a perfect oracle, which is the expected, defensible shape for this result.
+Median cluster_ari is 0.42 across this experiment's 15 runs: a real, substantial cluster
+signal, not a perfect one. Under that signal, learned (median stale_hit_rate 0.068) sits
+below global (0.091, U_a=2.0, p ~ 0.028, r ~ -0.84) and above oracle (0.048, U_a=24.0,
+p ~ 0.016, r ~ 0.92). Per-cluster fitting beats pooling, and does not close the gap to a
+perfect oracle.
 
-This reverses the prior remediation pass's finding ("learned tracks global, not
-oracle") -- but that finding was correct for the workload it was tested against; the
-workload itself was the bug, not the clustering or calibration code. Direct inspection
-of same-cluster embeddings (see "Root cause of the generator fix" below) shows the
-fix's remaining imperfection: same-cluster, different-aspect canonical queries (e.g. two distinct
-"Renaissance art" questions on different aspects) score 0.7-0.8 cosine similarity, close
-to the SemanticIndex's 0.8 match threshold, which is why false_hit_rate is still high
-(median ~0.91) though down from the pre-fix ~0.97. This is a more realistic failure
-mode than the old cross-cluster-conflation bug -- same-topic paraphrase-adjacent
-queries genuinely can look similar to a general-purpose embedder -- but it means
-false_hit_rate remains a first-order caveat on every number below, not a solved problem.
+learned vs global is designated primary comparison P1 in
+analysis/multiple_comparisons.py, reported uncorrected, and holds at alpha = 0.05.
+learned vs oracle is secondary comparison S1: its Holm-adjusted p over the ten-member
+secondary family is 0.114, so it does not hold at alpha = 0.05.
+`make multiple-comparisons` prints both.
+
+false_hit_rate is high (median 0.91) and is a first-order caveat on every number below.
+Direct inspection of same-cluster embeddings locates it: same-cluster, different-aspect
+canonical queries (two distinct "Renaissance art" questions on different aspects, for
+instance) score 0.7-0.8 cosine similarity, close to the SemanticIndex's 0.8 match
+threshold, so same-topic queries about different aspects can match each other.
 
 ## Setup
 
 W1 eval split, gate enabled, FreCoS eviction, cache_size_entries=412 (25% of the
 1650-answer_id working set at this scale), ttl_confidence=0.9, cluster_count_k=10.
-n_queries=3000 (not the pre-fix rerun's 12000) and 5 seeds (not 10): reduced scale for
-this rerun, since the generator fix invalidated every previously committed
-results.csv and rerunning at the original scale was judged not worth the ~9-hour,
-almost-entirely-embedding cost for validating a fix whose thesis-level conclusion does
-not depend on trace size (see CHANGES.md). Three lambda_source values (global,
-learned, oracle) x 5 seeds (0-4) = 15 runs. results.csv has exactly 15 rows plus
-header, columns match benchmarks.harness.CSV_COLUMNS exactly (now including
-n_useful_hits and useful_hit_rate, added alongside this rerun -- see
-results/sweeps/ttl_confidence/summary.md for why).
+n_queries=3000 and 5 seeds, a deliberate statistical-power cost: a full-scale run at
+12000 queries and 10 seeds is on the order of a 9-hour, almost entirely embedding-bound
+job on this machine, and the conclusion this experiment supports does not depend on trace
+size. Three lambda_source values (global, learned, oracle) x 5 seeds (0-4) = 15 runs.
+results.csv has exactly 15 rows plus header, columns match
+benchmarks.harness.CSV_COLUMNS exactly, including n_useful_hits and useful_hit_rate (see
+results/sweeps/ttl_confidence/summary.md for what useful_hit_rate counts).
 
 Each row's cluster_id comes from gptcache_ext.staleness.assign_real_clusters: every
 distinct query text in the trace is embedded once (GPTCache's default ONNX model,
@@ -46,35 +39,35 @@ every row (calibration and eval) is assigned to its nearest centroid. The genera
 true cluster label is kept as true_cluster_id for the ARI figure only. For the oracle
 arm specifically, cluster_id is restored to true_cluster_id after the ARI is computed:
 oracle_lambdas_for_seed's table is keyed by the generator's true cluster, and under
-real, imperfect clustering a learned cluster id no longer maps 1:1 to a true cluster,
-so oracle's fit and serve path must keep using true cluster identity to retain its
-original meaning (the ceiling a perfect clusterer would achieve).
+real, imperfect clustering a learned cluster id does not map 1:1 to a true cluster, so
+oracle's fit and serve path must keep using true cluster identity to retain its meaning
+(the ceiling a perfect clusterer would achieve).
 
 Lookup is benchmarks.semantic_index.SemanticIndex: brute-force cosine similarity
 against every cached entry's embedding, GPTCache's default 0.8 threshold.
 
 Five distinct traces were generated, one per seed, rather than one trace replayed five
-times, for the same reason as always: the pipeline has no randomness of its own once a
-trace is fixed, so a repeated trace would give nothing to bootstrap over.
+times: the pipeline has no randomness of its own once a trace is fixed, so a repeated
+trace would give nothing to bootstrap over.
 
-## Root cause of the generator fix (for context)
+## Canonical query text and cluster separability
 
-Pre-fix, W1's canonical query template was `"What is the current status of topic
-{cluster_id}-{answer_id}?"` -- identical across every cluster except two embedded
-integers. A general-purpose sentence embedder cannot use numeric substitution inside an
-otherwise-fixed template to recover cluster identity; cross-cluster template pairs
-scored 0.6-0.9 cosine similarity, often higher than genuine same-cluster paraphrase
-pairs, and cluster_ari was 0.02-0.06 (random-assignment level) across every experiment
-in the pre-fix rerun.
+Cluster identity has to be recoverable from query text alone for this experiment to mean
+anything, since clustering is fit from embeddings of that text.
+workloads/w1_synthetic/generator.py builds canonical query text from per-cluster topic
+phrases (CLUSTER_TOPICS, 51 distinct real-world subjects) crossed with per-answer aspect
+and qualifier phrases (ANSWER_ASPECTS x ANSWER_QUALIFIERS, 750 combinations per cluster),
+keyed by each canonical answer's position within its own cluster rather than by a global
+answer_id: a global-index stride aliases back onto the same vocabulary slot far sooner
+than the vocabulary itself repeats (see the generator's `local_index` comment).
+tests/test_w1.py asserts cluster_ari > 0.5 on a 3000-query, seed-0 trace as a regression
+guard.
 
-The fix (workloads/w1_synthetic/generator.py) replaces this with per-cluster topic
-phrases (CLUSTER_TOPICS, 51 distinct real-world subjects) combined with per-answer
-aspect and qualifier phrases (ANSWER_ASPECTS x ANSWER_QUALIFIERS, 750 combinations per
-cluster) drawn by each canonical answer's position within its own cluster -- not a
-global answer_id, since a global-index-based stride can alias back onto the same
-vocabulary slot far sooner than the vocabulary actually repeats (see the generator's
-`local_index` comment). tests/test_w1.py now asserts cluster_ari > 0.5 on a
-3000-query, seed-0 trace as a regression guard.
+A template that varies only in embedded integers does not meet that requirement: a
+general-purpose sentence embedder cannot use numeric substitution inside an otherwise
+fixed template to recover cluster identity, and cross-cluster pairs of such templates
+score 0.6-0.9 cosine similarity, often above genuine same-cluster paraphrase pairs, which
+puts cluster_ari at random-assignment level (0.02-0.06).
 
 ## Bootstrap method
 
@@ -85,10 +78,9 @@ resamples with replacement (n=5 each), median of each resample, 95% CI from the
 ## Mann-Whitney U and effect size
 
 analysis/stats.py (hand-rolled: scipy not available in this sandbox), rank-biserial
-correlation r = 2*U_a/(n1*n2) - 1 as effect size -- not r = |z|/sqrt(n1+n2), which an
-earlier version of this project mislabeled "rank-biserial." The two formulas disagree
-materially, and the z-based one discards the sign of the effect; see
-analysis/stats.py's module docstring.
+correlation r = 2*U_a/(n1*n2) - 1 as effect size, not r = |z|/sqrt(n1+n2), which is a
+z-based rank correlation that disagrees with rank-biserial materially and discards the
+sign of the effect; see analysis/stats.py's module docstring.
 
 ## Results
 
@@ -102,19 +94,17 @@ analysis/stats.py's module docstring.
 fit once per trace before lambda_source-specific fitting; the median above is over all
 15 rows.)
 
-Mann-Whitney U, stale_hit_rate:
+Mann-Whitney U, stale_hit_rate. p is raw; the Holm-adjusted p of every comparison the
+report quotes is printed by `make multiple-comparisons`.
 
-- learned vs global: U_a=2.0, p ~ 0.0283, r ~ -0.84 (significant, large effect, learned lower/better)
-- learned vs oracle: U_a=24.0, p ~ 0.0163, r ~ 0.92 (significant, large effect, learned worse than oracle)
-- global vs oracle: U_a=25.0, p ~ 0.0090, r ~ 1.00 (significant, perfect separation)
+- learned vs global: U_a=2.0, p ~ 0.0283, r ~ -0.84 (large effect, learned lower/better; primary P1, exempt from correction, holds)
+- learned vs oracle: U_a=24.0, p ~ 0.0163, r ~ 0.92 (large effect, learned worse than oracle; secondary S1, Holm-adjusted p 0.114, does not hold)
+- global vs oracle: U_a=25.0, p ~ 0.0090, r ~ 1.00 (perfect separation; not among the comparisons the report quotes, so not in the corrected family)
 
 ## Takeaway for the report
 
-With cluster identity actually recoverable from the query text (median cluster_ari
-0.42, versus 0.036 pre-fix), per-cluster fitting beats pooling with a large,
-significant effect, and sits significantly closer to oracle without fully reaching it
--- the shape the original pre-remediation report claimed, now backed by a workload a
-real embedder can actually separate. false_hit_rate remains high (median ~0.91): the
-fix solved cross-cluster conflation but not same-cluster, different-aspect similarity,
-which a 0.8 cosine threshold still often crosses. Every number here should be read
-alongside that caveat, same as the pre-fix version of this report already insisted on.
+With cluster identity recoverable from the query text (median cluster_ari 0.42),
+per-cluster fitting beats pooling with a large effect on the primary comparison, and sits
+between pooling and oracle without reaching oracle. false_hit_rate is high (median 0.91):
+same-cluster, different-aspect similarity crosses the 0.8 cosine threshold often, so
+every number here should be read alongside that caveat.

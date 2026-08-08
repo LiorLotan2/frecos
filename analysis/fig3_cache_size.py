@@ -1,12 +1,12 @@
-"""Figure 4: cache-size sweep with the knee marked.
+"""Figure 3 in the report (label fig:cachesize): cache-size sweep with the knee
+marked.
 
 From results/sweeps/cache_size/results.csv. The knee is computed here, not
 hardcoded: the smallest cache size whose median hit_rate is within
-KNEE_TOLERANCE (relative) of every larger size's median. Hardcoding this value
-is exactly the bug this module used to have (KNEE_SIZE = 1980 / "30%" left in
-place after a rerun had already moved the true knee to 990 / 15%, see
-CHANGES.md) -- computing it from the same results.csv the plot itself reads
-means the annotation cannot drift out of sync with the data again.
+KNEE_TOLERANCE (relative) of every larger size's median. Deriving it from the
+same results.csv the plot itself reads means the annotated knee and the plotted
+curve cannot disagree, which a hardcoded constant would allow whenever the
+underlying results change.
 """
 from common import load_csv, group_values, bootstrap_median_ci, new_figure, save_figure, REPO_ROOT
 

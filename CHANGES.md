@@ -104,9 +104,16 @@ before trusting any of them.
 - **3.2 (multiple-comparison correction):** done. `analysis/multiple_comparisons.py`
   implements Holm-Bonferroni (hand-rolled, scipy unavailable), with two primary
   comparisons designated up front (learned vs. global; gate-on vs. LFU floor) and every
-  other Mann-Whitney test treated as secondary. Applied to the actual rerun's p-values;
-  every previously-significant result stays significant after correction (largest
-  adjusted $p \approx 0.023$).
+  other Mann-Whitney test treated as secondary. On the current data (`make
+  multiple-comparisons` recomputes the whole family from the committed
+  `results/**/results.csv`), the ten-comparison secondary family has a smallest
+  Holm-adjusted $p$ of $0.090$, so **no secondary comparison survives $\alpha = 0.05$**;
+  the two designated primaries are reported uncorrected and both hold ($p \approx 0.028$
+  for brackets learned vs. global, $p \approx 0.009$ for the ablation's gate-on vs. LFU
+  floor). That outcome is arithmetically forced as much as empirical: at 5 seeds per arm
+  the smallest two-sided $p$ `analysis/stats.py`'s normal approximation can return is
+  $0.009023$, and $0.009023 \times 10 = 0.090234 > 0.05$, so no ten-member family at this
+  seed count can clear the threshold no matter how clean the separation.
 - **3.3 (fair eviction test):** done, and found a real bug in the first attempt.
   `benchmarks/runners/cost_aware_eviction.py` (gate off, heterogeneous cost, scored on
   `cost_saved_usd`) first ran at `cache_size_entries=1650` (matching the main ablation)
@@ -114,9 +121,12 @@ before trusting any of them.
   filling under the real semantic index's high hit rate (339–372 misses per run, under
   budget), so eviction never ran at all. Fixed by measuring the trace's actual working
   set with an unlimited cache (339–474 distinct entries needed) and rerunning at
-  `cache_size_entries=100`. The fixed run shows a real, significant effect: FreCoS beats
-  LFU on cost saved ($p \approx 0.0009$, $r \approx 0.74$), LRU maximizes cost saved but
-  at more than double FreCoS's stale-hit-rate.
+  `cache_size_entries=100`. The fixed run showed a significant effect at the time: FreCoS
+  beat LFU on cost saved ($p \approx 0.0009$, $r \approx 0.74$), with LRU maximizing cost
+  saved but at more than double FreCoS's stale-hit-rate. **Superseded:** that effect does
+  not survive Phase 7's generator fix and Phase 8's cost-metric fix — on the current data
+  FreCoS versus LFU on cost saved is $U_a = 13.0$, $p \approx 0.917$, $r \approx 0.04$, no
+  effect (see Phase 8 below, and `make multiple-comparisons`).
 - **3.4 (environment capture):** done. `benchmarks/capture_env.py` writes `env.json`
   (CPU model, core counts, RAM, OS, kernel, Python version) next to every experiment's
   `results.csv`; wired into all seven runners. One gap: `results/brackets/` has no
@@ -181,8 +191,10 @@ before trusting any of them.
   (abstract, Section 5.3, Discussion, Conclusion): LRU strictly dominates FreCoS on this
   test (more cost saved, fewer stale hits), because recency of access happens to track
   recency of write on this trace, so LRU gets a freshness benefit for free with no
-  staleness model at all. FreCoS still beats the LFU floor on cost saved with a large
-  effect; that claim was correct and is unchanged.
+  staleness model at all. FreCoS still beat the LFU floor on cost saved with a large
+  effect at this point; that claim was correct on Phase 5's data and was left unchanged
+  then. **Superseded by Phase 8:** once `cost_saved_usd` excludes false hits, that
+  comparison is $U_a = 13.0$, $p \approx 0.917$, $r \approx 0.04$ — no effect.
 - **Clustering result reframed as a diagnosed measurement failure, not a negative
   result:** the abstract, Introduction contribution #2, Discussion, and Conclusion
   presented "per-cluster staleness learning does not beat pooling" as a finding. Root
@@ -284,9 +296,12 @@ and diffed), not asserted.
   experiment's cache size was re-derived empirically the same way the original did,
   confirming 25 entries forces real eviction pressure at this scale). Median
   `cluster_ari` across the rerun is 0.40--0.45, and the report's central finding
-  reverses again, this time correctly: learned beats global with a large, significant
-  effect ($r \approx -0.84$, $p \approx 0.028$ on the main bracket), and separates
-  significantly from oracle in the expected direction ($r \approx 0.92$) — the shape the
+  reverses again, this time correctly: learned beats global with a large effect
+  ($r \approx -0.84$, $p \approx 0.028$ on the main bracket — designated primary
+  comparison P1, so reported uncorrected, and it holds at $\alpha = 0.05$), and separates
+  from oracle in the expected direction ($r \approx 0.92$, raw $p \approx 0.016$, but this
+  one is a secondary comparison whose Holm-adjusted $p$ is $0.114$, so it does not hold at
+  $\alpha = 0.05$) — the shape the
   pre-Phase-2 report originally claimed, now backed by a workload a real embedder can
   actually separate. `false_hit_rate` drops from ~0.97 to ~0.90--0.91, not eliminated:
   direct inspection shows the residual is now same-cluster, different-aspect query
@@ -405,9 +420,15 @@ and forced another rerun.
   `last_access = now` and leaves `create_on` alone, which is what the staleness invariant
   requires (`tests/invariants.py` checks that staleness decisions read creation time and
   never last-access time). `benchmarks/semantic_index.py` inherits the fixed method. The
-  ablation's rows 1--3 still tie seed by seed, for the reason the report already gives:
-  at a 412-entry budget with 178--210 misses per run, eviction never fires, so no policy
-  is ever called to pick a victim.
+  ablation's rows 1--3 still tie seed by seed, and so do rows 4--5, for one measured
+  reason: instrumenting `select_victim` across all 25 ablation runs records zero calls and
+  zero evictions in every row. Against the 412-entry budget the resident set peaks at
+  256--291 entries, because entries are keyed by query text and a repeated miss on a
+  resident text replaces its entry rather than adding one. The five rows therefore
+  collapse to two distinct configurations, gate off and gate on, so the ablation measures
+  the gate alone; `results/ablation/summary.md` states this and points at
+  `results/cost_aware_eviction/` (25-entry budget, 1385--1586 `select_victim` calls per
+  run) as the only experiment that exercises the eviction value function.
 
 - **`peak_rss_mb` is now a real peak.** It was a single `memory_info().rss` reading taken
   after the replay finished. `_replay` now samples RSS every 100 scored queries
@@ -466,9 +487,10 @@ and forced another rerun.
   rather than a narrow win, and trace the mechanism to creation age tracking access
   recency on this trace.
 
-- **Verified, not asserted:** 96/96 tests pass, `flake8` is clean over `gptcache_ext
-  tests benchmarks analysis workloads`, the report builds with zero overfull hboxes, and
-  the PDF page-tree `/Count` is 12.
+- **Verified, not asserted:** 101/101 tests pass (`make test`, 16.8 s), `flake8` is clean
+  over `gptcache_ext tests benchmarks analysis workloads`, `make multiple-comparisons`
+  reproduces every U/r/p triple quoted in the report and the summaries from the committed
+  CSVs, the report builds with zero overfull hboxes, and the PDF page-tree `/Count` is 12.
 
 ## What was not fixed, and why
 

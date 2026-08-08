@@ -6,10 +6,10 @@ Wikipedia revision that touched the page. valid_until is set to the timestamp
 of the next revision that changed the answer sentence per the automatic rule
 in detect_invalidations.py, or infinity if no later revision changes it.
 
-This sample exists to demonstrate that the §2.3 schema is mechanically
-producible from this data source. It is explicitly NOT proposed as reliable
-ground truth: the hand-labeling exercise in hand_labels.py found the automatic
-rule agrees with human judgment only 40% of the time, almost entirely because
+This sample exists to demonstrate that the trace schema the harness consumes is
+mechanically producible from this data source. It is explicitly NOT proposed as
+reliable ground truth: the hand-labeling exercise in hand_labels.py finds the
+automatic rule agrees with human judgment only 40% of the time, almost entirely because
 sentence-level diffing catches copyedits and infobox/template artifacts that
 do not change the underlying fact. See docs/w2-feasibility.md.
 """

@@ -1,21 +1,17 @@
 """Bracketing follow-up: does the learned/oracle gap on stale-hit-rate open up when
 calibration data is scarcer?
 
-The original bracketing run (results/brackets/) used n_queries=12000, which gives every
-cluster 550-650 calibration observations, far above the fitter's n_obs>=30 fallback
-floor. At that sample size the per-cluster MLE recovers the true generator lambda almost
-exactly, so learned mode is statistically indistinguishable from oracle mode (Mann-Whitney
-p ~ 0.94) rather than sitting strictly between global and oracle as Gate 3 wants.
+A per-cluster exponential MLE gets more accurate the more calibration observations it
+sees, so how far learned sits from oracle depends on calibration sample size and not only
+on clustering quality. Trace size is therefore an axis in its own right.
 
-This script reruns the identical design (global/learned/oracle lambda_source x 5 seeds,
-gate enabled, FreCoS eviction) at a much smaller trace size, chosen so calibration
-observations per cluster land close to the n_obs=30 floor instead of far above it. See
-results/brackets/calibration_sweep/summary.md for the actual n_obs values and verdict.
-n_queries=1800 here is independent of the reduced-scale rerun in brackets.py (that
-rerun uses 3000): this script was already deliberately smaller before the generator
-text fix, to test the calibration-scarcity axis, not to match the main bracketing
-run's trace size. Only the seed count was reduced (10 -> 5), matching every other
-experiment's reduced-scale rerun (see brackets.py's docstring for why).
+This script runs the same design as brackets.py (global/learned/oracle lambda_source x 5
+seeds, gate enabled, FreCoS eviction) at a smaller trace size, chosen so calibration
+observations per cluster land close to the fitter's MIN_OBSERVATIONS=30 fallback floor
+(41-70 at this scale) instead of comfortably above it. n_queries=1800 rather than
+brackets.py's 3000 is exactly the variable under test, which is why this runner does not
+inherit that module's trace size. See results/brackets/calibration_sweep/summary.md for
+the measured n_obs values and the verdict.
 """
 import os
 
@@ -47,7 +43,7 @@ RESULTS_CSV = os.path.join(RESULTS_DIR, "results.csv")
 
 
 def oracle_lambdas_for_seed(seed):
-    """Same reconstruction trick the original bracketing run used: rng =
+    """Same reconstruction as brackets.py's oracle_lambdas_for_seed: rng =
     np.random.default_rng(seed) then cluster_params(n_clusters, rng) reproduces the exact
     draw generate_trace makes before doing anything else. True lambda per cluster is
     1/half_life_scale.

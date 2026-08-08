@@ -6,7 +6,7 @@ Run once. Writes one JSON file per question under revisions_cache/, each a list 
 runs offline against a fixed snapshot. Only the extracted sentence is kept, not
 the full wikitext of every revision (~150KB each): the sentence is all downstream
 steps need, and keeping full wikitext for 30 pages x 60 revisions makes the cache
-too large to commit for what is an 8-hour feasibility spike.
+too large to commit for a feasibility spike.
 """
 import json
 import time

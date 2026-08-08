@@ -1,4 +1,8 @@
-"""Frozen interface contracts. Do not modify without re-freezing the plan."""
+"""Frozen interface contracts: the single definition of an entry's shape, the decision
+enum, and the gate/eviction/staleness Protocols. Every other module here and in
+benchmarks/ codes against these rather than against each other's concrete classes, so a
+signature change in this file is a change to every implementation and every caller at once.
+"""
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, Sequence

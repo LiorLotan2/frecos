@@ -5,12 +5,10 @@
 W1 eval split, 5 rows x 5 seeds = 25 runs, same trace generation as the bracketing
 experiment: `generate_trace(n_tenants=5, n_clusters=10, n_queries=3000, seed=seed)`,
 five distinct traces (one per seed), cache_size_entries=412, ttl_confidence=0.9,
-cluster_count_k=10. Reduced-scale rerun with the generator text fix (see
-results/brackets/summary.md for the root cause and fix); n_queries=3000 and 5 seeds,
-not the pre-fix rerun's 12000 and 10.
+cluster_count_k=10.
 
-cluster_ari (median ~0.42 across all rows) confirms the same fixed-clustering-quality
-finding as the bracketing experiment.
+cluster_ari (median 0.42 across all rows) matches the bracketing experiment's clustering
+quality, as expected from the shared trace generation.
 
 Rows:
 
@@ -22,12 +20,12 @@ Rows:
 | 4 | on (TTLGate, learned) | LFU | the gate alone |
 | 5 | on (TTLGate, learned) | FreCoS | full stack |
 
-A sixth row (FreCoS without the size-normalization term) existed in the original
-ablation design but is gone: the size term itself was removed from FreCoS's value
-function entirely (see gptcache_ext/eviction/frecos.py's module docstring) after a
-dedicated isolation experiment (results/ablation/size_term_isolation/, no longer
-regenerable) found it made no measurable difference under this project's entry-count
-eviction budget, for a structural reason unrelated to clustering quality.
+There is no size-normalization row, because FreCoS's value function carries no size term
+(see gptcache_ext/eviction/frecos.py's module docstring): eviction here runs under an
+entry-count budget, which gives `/size_bytes` no mechanism to act through, and a
+dedicated isolation experiment measured no difference from it
+(results/ablation/size_term_isolation/, a historical artifact that no command in this
+repo regenerates).
 
 Gate-on rows fit the staleness table with fit_staleness_table(trace, mode="learned",
 confidence=0.9). Row 3's eviction policy is
@@ -36,7 +34,7 @@ LFU-with-cost-tiebreak substitute (value = freq / regen_cost), not their release
 code, unreachable in this build environment.
 
 results.csv has 25 rows plus header, columns match benchmarks.harness.CSV_COLUMNS
-exactly (now including n_useful_hits and useful_hit_rate).
+exactly, including n_useful_hits and useful_hit_rate.
 
 ## Bootstrap method
 
@@ -55,36 +53,44 @@ percentiles. stdlib random, seeded 12345.
 | 5 gate+FreCoS | 0.0677 | (0.0505, 0.0874) | 0.3360 | 0.9111 | 0.191 |
 
 Rows 1-3 are byte-identical seed by seed, and rows 4-5 are byte-identical seed by seed.
-Both are traced to real, distinct causes, not left as an unexplained coincidence:
+Both ties have one measured cause: eviction never fires anywhere in this ablation.
 
-**Rows 1-3 (gate off):** with the real semantic index's high hit rate at this
-configuration, only 178-210 misses occur out of 1890 scored queries per run, well
-under the 412-entry cache budget. The cache never fills, so eviction never runs at
-all -- LRU, LFU, and the BF-substitute all tie because none of them is ever called to
-select a victim, not because they agree on one. results/cost_aware_eviction/summary.md
-confirms this directly by rerunning this exact gate-off configuration at a cache size
-small enough to force real eviction pressure and finds real differences between the
-three policies there.
+**Eviction never runs.** Instrumenting `select_victim` over all 25 runs records zero
+calls and zero evictions in every one of the five rows. Against the 412-entry budget the
+resident set peaks at 256-291 entries, so no row ever reaches the point where a victim
+has to be chosen. Entries are keyed by query text (benchmarks.harness.ExactMatchIndex,
+which benchmarks.semantic_index.SemanticIndex inherits), so a repeated miss on a text
+already resident replaces that entry rather than adding one; occupancy is bounded by the
+number of distinct texts that miss, not by the miss count, which is 178-210 scored misses
+per run in rows 1-3 and 1165-1338 in rows 4-5 out of 1890 scored queries.
 
-**Rows 4-5 (gate on):** genuinely tie on every metric because FreCoS's decay term
-contributes nothing measurable once the gate is active (see Interaction check below) --
-this matches every prior version of this ablation and is unrelated to cache sizing,
-since misses here (1165-1338 per run) comfortably exceed the 412-entry budget and
-eviction does run.
+Every tie in the table above is therefore trivial rather than substantive. Rows 1-3
+differ only in eviction policy, and none of LRU, LFU or the BF-substitute is ever called
+to select a victim, so those three rows are one configuration executed three times. Rows
+4-5 differ only in eviction policy in the same way, so FreCoS's value function is never
+consulted there either. The five rows collapse to two distinct configurations, gate off
+and gate on: **this ablation measures the gate alone.**
 
-## Interaction check: does the gate carry most of the improvement?
+The eviction value function is exercised only by results/cost_aware_eviction/, at a
+25-entry budget, where `select_victim` runs 1385-1586 times per run depending on arm and
+seed and the cache sits pinned at 25/25. Every claim about FreCoS's cost and decay terms
+rests on that experiment, not on this one.
 
-Isolating the two effects:
+## What this ablation isolates
 
 - Gate alone: row 4 vs row 2, stale_hit_rate 0.0677 vs 0.5464, delta -0.479.
-- FreCoS's value function on top of the gate: row 5 vs row 4, delta 0.0000 (identical).
+- FreCoS's value function on top of the gate: not measured here. Row 5 vs row 4 is a
+  delta of exactly 0.0000 because eviction never fires, so the two rows run identical
+  code paths. It is not evidence about the value function in either direction.
 
 Mann-Whitney U, row 2 (floor) vs row 4 (gate+LFU), analysis/stats.py: U_a=25.0,
 p ~ 0.0090, r ~ 1.00 (perfect separation, gate strictly lower stale-hit-rate on every
-seed). The gate accounts for the entire measurable stale-hit-rate improvement in this
-ablation; FreCoS's decay term adds nothing detectable on top of it, consistent with
-every prior version of this ablation and with the design's own framing of the decay
-term as a soft prior rather than the primary staleness-prevention mechanism.
+seed). This is designated primary comparison P2 in analysis/multiple_comparisons.py, so
+it is reported uncorrected and holds at alpha = 0.05; `make multiple-comparisons` prints
+it next to the Holm-corrected secondary family.
+
+The gate accounts for the entire measurable stale-hit-rate improvement in this ablation,
+and it is the only mechanism this ablation puts under test.
 
 ## Design decisions made here
 

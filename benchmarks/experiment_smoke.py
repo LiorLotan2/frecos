@@ -1,7 +1,7 @@
 """Fast CI check that the experiment path (trace generation, real embedder-based
 clustering, staleness fitting, gate, FreCoS eviction, real semantic index, harness)
 runs end to end, at a scale CI can afford on every commit. Not a substitute for
-`make experiments`: 2 seeds and 1000 queries instead of 10 seeds and 12000, so the
+`make experiments`: 2 seeds and 1000 queries instead of 5 seeds and 3000, so the
 numbers it prints are not meant to match any committed results.csv.
 
 Passes a real benchmarks.semantic_index.SemanticIndex and a real embedder-based

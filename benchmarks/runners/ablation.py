@@ -1,7 +1,7 @@
 """Ablation experiment: isolate the contribution of the gate and of FreCoS eviction's
 value function.
 
-Design: W1 eval split, five rows crossed with 10 seeds each.
+Design: W1 eval split, five rows crossed with 5 seeds each.
 
 | Row | Gate | Eviction                     | Isolates                          |
 |-----|------|-------------------------------|------------------------------------|
@@ -21,14 +21,12 @@ Row 2 (LFU), not row 1 (LRU), is the comparison of record throughout: Biton & Fr
 own finding is that LRU is weak on semantic workloads, so an improvement over LRU alone
 isn't a result.
 
-Same trace generation and cache size as the bracketing experiment (brackets.py):
-n_tenants=5, n_clusters=10,
-n_queries=3000, one fresh trace per seed (the pipeline is deterministic given a trace, so
-replaying one trace ten times would give ten identical rows and nothing to bootstrap
-over). cache_size_entries=412, confirmed still 20-30% of the 1650 distinct answer_ids
-this n_queries produces (see verify_cache_size below). n_queries=3000 and 5 seeds, not
-the original 12000 and 10, per the reduced-scale rerun this experiment shares with
-brackets.py -- see that module's docstring for why.
+Same trace generation, scale and cache size as the bracketing experiment (brackets.py):
+n_tenants=5, n_clusters=10, n_queries=3000, 5 seeds, one fresh trace per seed (the pipeline
+is deterministic given a trace, so replaying one trace would give identical rows and
+nothing to bootstrap over). cache_size_entries=412 is 20-30% of the 1650 distinct
+answer_ids this n_queries produces, asserted by verify_cache_size below. See brackets.py's
+docstring for why the scale is what it is.
 """
 import os
 

@@ -3,12 +3,12 @@
 No LLM is ever called here. This is a pure trace replayer: on a miss, the "response" is
 whatever answer_id the trace says was generated, at whatever regen_cost and size_bytes
 the trace recorded. This is a validity limitation, not an oversight, and the report's
-Experimental Setup must say so plainly.
+Experimental Setup states it as one.
 
 Miss latency is simulated, not measured, since there is no LLM call to time. It is drawn
 from a log-normal scaled by size_bytes, seeded per (seed, query_id) so replay order never
-affects the result. This distribution is not fit to any real trace (that calibration is
-out of scope here); a later pass can swap it out once real numbers exist.
+affects the result. This distribution is not fit to any real trace; that calibration is
+out of scope here.
 
 Hit latency and extension overhead (index lookup + gate check) are measured for real with
 time.perf_counter() around the actual decide() call.
@@ -21,10 +21,10 @@ table are supplied by the caller and only need to satisfy the Protocols in
 gptcache_ext.contracts.
 
 bump_freq advances last_access as well as freq, so LRUEviction here is real
-least-recently-used and not insertion order. That was not always true: an earlier
-bump_freq preserved last_access, which silently turned every LRU row in this project into
-FIFO. Peak RSS is sampled during the replay rather than read once at each end, so it is a
-real high-water mark over the run.
+least-recently-used and not insertion order: a bump_freq that left last_access at its
+insertion value would silently reduce every LRU row in this project to FIFO. Peak RSS is
+sampled during the replay rather than read once at each end, so it is a real high-water
+mark over the run.
 """
 import hashlib
 import math
@@ -212,16 +212,14 @@ def _replay(
     inline.
 
     index: an already-constructed Index (e.g. benchmarks.semantic_index.SemanticIndex);
-    defaults to a fresh ExactMatchIndex when not supplied, preserving every existing
-    caller's behavior unchanged.
+    defaults to a fresh ExactMatchIndex when not supplied.
 
     process: the psutil.Process whose RSS is sampled every RSS_SAMPLE_EVERY queries to
     build a real high-water mark. Sampling covers the warmup rows too, since the cache
     fills there."""
     check_no_valid_until_leak()
-    # NullGate (gate_enabled=False) is a no-op by design and would fail this
-    # regression check trivially, so it only applies when a real staleness gate
-    # is wired in.
+    # NullGate (gate_enabled=False) never rejects a candidate, so it fails this check
+    # trivially; the check only means anything when a real staleness gate is wired in.
     if config.gate_enabled:
         check_age_from_create_on_not_last_access(gate)
 
@@ -316,19 +314,19 @@ def run_harness(
     threshold: float = EXACT_MATCH_THRESHOLD,
     cluster_ari: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Replays trace through the pipeline and returns one plan-sec-2.4 row.
+    """Replays trace through the pipeline and returns one results-CSV row.
 
-    trace: sequence of dict rows conforming to the plan sec 2.3 schema.
+    trace: sequence of dict rows in the schema workloads/w1_synthetic/generator.py emits.
     config: a gptcache_ext.config.Config.
     gate, eviction_policy, staleness_table: objects satisfying the matching Protocols
         in gptcache_ext.contracts. This module never imports concrete implementations.
     index, threshold: optional Index override (e.g. benchmarks.semantic_index.
         SemanticIndex) and its matching similarity threshold; default to a fresh
-        ExactMatchIndex at the exact-match threshold, preserving prior behavior.
+        ExactMatchIndex at the exact-match threshold.
     cluster_ari: adjusted Rand index between the true and learned cluster labels for
         this trace, when gptcache_ext.staleness.assign_real_clusters.assign_real_clusters
-        was used upstream; None when the caller still uses the generator's oracle
-        cluster_id directly (recorded as an empty CSV cell, never a placeholder value).
+        was used upstream; None when the caller uses the generator's oracle cluster_id
+        directly (recorded as an empty CSV cell, never a placeholder value).
     """
     process = psutil.Process()
     process.cpu_percent(interval=None)  # primes the internal counter

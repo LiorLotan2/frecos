@@ -1,8 +1,8 @@
 """Generates analysis/figures/supplementary.csv: summary statistics for
-results that did not clear the bar for a headline figure (largest effect
-size, tightest CI). Currently just the cluster_k sweep, which came out
+results that do not clear the bar for a headline figure (largest effect
+size, tightest CI). Currently just the cluster_k sweep, which is
 non-monotone with heavily overlapping CIs at every point (see
-results/sweeps/cluster_k/summary.md) and so was not promoted to a plot.
+results/sweeps/cluster_k/summary.md) and so gets a table rather than a plot.
 """
 import csv
 from common import load_csv, group_values, bootstrap_median_ci, REPO_ROOT, FIGURES_DIR

@@ -86,16 +86,16 @@ class TestClusters:
 
             loaded = KMeansModel.load(path)
             assert np.array_equal(loaded.centroids, model.centroids)
-            # loaded model reproduces the same assignment as the original
+            # a round-tripped model must assign an embedding exactly as the in-memory one
             assert assign_cluster(loaded, embeddings[0]) == assign_cluster(model, embeddings[0])
 
 
 class TestFitter:
     def test_learned_lambda_within_10_percent_at_n_obs_100(self):
-        # n_per_cluster is well above the acceptance criterion's n_obs >= 100 floor;
-        # the exponential MLE has enough variance at n=100-200 that a single seed
-        # can miss 10% by chance, so a larger sample is used to make the assertion
-        # about estimator correctness (not sample size) reliable across seeds.
+        # n_per_cluster sits well above the n_obs >= 100 floor this test is named for:
+        # the exponential MLE has enough variance at n=100-200 that a single seed can
+        # miss 10% by chance, so the larger sample keeps the assertion about estimator
+        # correctness (not about sample size) reliable across seeds.
         true_lambdas = {0: 1.0 / 3600.0, 1: 1.0 / 7200.0, 2: 1.0 / 1800.0}
         rows = make_synthetic_trace(true_lambdas, n_per_cluster=2000, seed=123)
         table = fit_staleness_table(rows, mode="learned", confidence=0.9)

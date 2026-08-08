@@ -43,9 +43,7 @@ def is_useful_hit(row: ServedQuery) -> bool:
     it was still valid. is_stale_hit and is_false_hit are independent, overlapping
     predicates (a hit can be both), so n_useful must be counted directly with this
     predicate rather than derived as n_hits - n_stale - n_false, which double-subtracts
-    the overlap and can go negative once both rates are large (see
-    analysis/fig4_ttl_tradeoff.py's former max(..., 0) clamp, no longer needed once
-    useful_hit_rate below counts the union correctly)."""
+    the overlap and can go negative once both rates are large."""
     return is_hit(row) and not is_stale_hit(row) and not is_false_hit(row)
 
 
@@ -86,8 +84,8 @@ def cost_saved_usd(rows: Sequence[ServedQuery]) -> float:
     """Sum of regen_cost over useful hits only, i.e. hits that were neither stale nor
     false. A hit that served an expired answer, or an answer to a different question,
     saved no backend call the caller would have accepted, so counting it would flatter
-    the metric. An earlier definition excluded only stale hits, which at this workload's
-    false-hit-rate made the number an upper bound rather than a measurement."""
+    the metric. Excluding only stale hits would leave false hits in, which at this
+    workload's false-hit-rate makes the number an upper bound rather than a measurement."""
     return sum(r.regen_cost for r in rows if is_useful_hit(r))
 
 

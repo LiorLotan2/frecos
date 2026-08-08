@@ -9,23 +9,23 @@ tests/test_gptcache_integration.py for an end-to-end check against a real SSData
 through this factory. The scoring logic itself is plain Python and is what tests/test_frecos.py
 exercises directly.
 
-The freq term uses log(2+freq), not the log(1+freq) in the original design note: at freq=0,
-log(1+0) is exactly 0 and zeroes the whole product regardless of cost, age, or size, so a
-brand-new entry would always be the eviction victim. log(2+freq) keeps the same shape (still
-concave, still increasing) while giving a fresh entry a strictly positive score.
+The freq term is log(2+freq) rather than log(1+freq): at freq=0, log(1+0) is exactly 0 and
+zeroes the whole product regardless of cost or age, so a brand-new entry would always be the
+eviction victim. log(2+freq) keeps the same shape (still concave, still increasing) while
+giving a fresh entry a strictly positive score.
 
-No /size_bytes term: an earlier version divided by size_bytes to reward evicting large
-entries first, but eviction here runs under an entry-count budget (evict one entry when the
-count exceeds cache_size_entries), not a byte budget. Under a count budget, evicting a
+No /size_bytes term. Eviction here runs under an entry-count budget (evict one entry when
+the count exceeds cache_size_entries), not a byte budget. Under a count budget, evicting a
 10-byte entry and a 10,000-byte entry both free exactly one slot, so size-normalizing the
 value function has no budget-economics meaning - it can only reshuffle which same-count-cost
 entry gets evicted, not reward freeing more bytes, because bytes freed is never what the
-budget check measures. This was verified empirically, not just derived on paper: an ablation
-that dropped the /size_bytes term at the smallest cache-size point in this project's sweep
-(where eviction pressure is highest) found FreCoS with and without the term statistically
-indistinguishable on every metric (see results/ablation/size_term_isolation/summary.md). A
-size term would only be meaningful if eviction were budgeted in bytes, which this project's
-harness does not implement.
+budget check measures. That is not only a paper argument: an ablation comparing FreCoS with
+and without a /size_bytes term under real eviction pressure (a 330-entry cache, 5% of that
+run's 6,600-answer working set, on a 12,000-query trace, 10 seeds) finds them statistically
+indistinguishable on every metric. That run predates the current metric schema and has no
+runner, so results/ablation/size_term_isolation/summary.md records what it measured and
+what it cannot be compared against. A size term would only be meaningful if eviction were
+budgeted in bytes, which this project's harness does not implement.
 """
 import math
 from typing import Optional, Sequence
@@ -66,9 +66,9 @@ class FreCoSEviction:
 
 def register():
     """Registers FreCoSEviction with GPTCache's own EvictionBase.get() factory, so it can
-    be selected by name like any built-in policy. This is the hook the design doc points
-    at (eviction/manager.py's if/elif chain) - hooked into from here rather than editing
-    the vendored file, by wrapping GPTCache's EvictionBase interface (put/get/policy) and
+    be selected by name like any built-in policy. The only available seam is that factory
+    (eviction/manager.py's if/elif chain), hooked from here rather than by editing the
+    vendored file, by wrapping GPTCache's EvictionBase interface (put/get/policy) and
     reading metadata back through gptcache_ext.metadata.get_meta since eviction natively
     only sees bare entry ids (data_manager.py's eviction_base.put(ids) / .get(id)).
     """

@@ -34,9 +34,9 @@ def prepare_trace(trace, n_clusters: int, seed: int, use_true_clusters: bool = F
     true_cluster_id. Oracle mode's lambda table is keyed by the generator's true
     cluster id (see oracle_lambdas_for_seed in each runner); under real, imperfect
     clustering a learned cluster id no longer maps 1:1 to a true cluster, so oracle's
-    fit and serve path must keep using true cluster identity to retain its original
-    meaning (the ceiling a perfect clusterer would achieve), while learned and global
-    use the real learned assignment.
+    fit and serve path must keep using true cluster identity for that arm to still mean
+    what it is meant to mean (the ceiling a perfect clusterer would achieve), while
+    learned and global use the real learned assignment.
     """
     embedder = get_shared_embedder()
     ari = assign_real_clusters(trace, embedder, n_clusters=n_clusters, seed=seed)

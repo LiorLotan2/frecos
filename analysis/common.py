@@ -1,11 +1,11 @@
-"""Shared plotting and stats helpers for the A11 figures.
+"""Shared plotting and stats helpers for the report's figures.
 
-Bootstrap method mirrors the one already used in every results/*/summary.md:
+Bootstrap method matches the one used in every results/*/summary.md:
 percentile bootstrap, 10,000 resamples with replacement, seeded stdlib random
 (seed 12345), median of each resample, 95% CI from the 2.5th/97.5th
-percentiles. Reusing the same seed and method here means the CIs plotted
-match the ones already reported in the summaries, rather than introducing a
-second, slightly different set of numbers for the same data.
+percentiles. Sharing the same seed and method means the CIs plotted here are
+the same numbers the summaries report, rather than a second, slightly
+different set for the same data.
 """
 import csv
 import random

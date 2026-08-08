@@ -46,9 +46,9 @@ LONGTAIL_TOPICS = [
 
 # One distinct real-world subject per cluster_id (51 entries, cycled via modulo for
 # n_clusters > 51), so a sentence embedder has an actual semantic signal to separate
-# clusters on. The prior template ("topic {cluster_id}-{answer_id}") differed across
-# clusters only in a number, which a general-purpose embedder cannot use to recover
-# cluster identity (see CHANGES.md / the remediation review this fixes).
+# clusters on. A template whose only per-cluster variation is a number ("topic
+# {cluster_id}-{answer_id}") gives a general-purpose embedder nothing to recover cluster
+# identity from, so the subject itself has to carry the signal.
 CLUSTER_TOPICS = [
     "the Amazon rainforest", "the Roman Empire", "quantum computing",
     "the 1969 moon landing", "Bitcoin", "the human immune system",
@@ -72,9 +72,10 @@ CLUSTER_TOPICS = [
 
 # Two independent axes combined by (answer_id % len(ANSWER_ASPECTS), answer_id //
 # len(ANSWER_ASPECTS) % len(ANSWER_QUALIFIERS)) give 25*30=750 distinct phrases per
-# cluster -- comfortably above the largest per-cluster canonical-answer count this
-# generator produces (~420 at the historical 12000-query/10-cluster scale) -- so two
-# different answer_ids in the same cluster never collide on identical text. Colliding
+# cluster -- comfortably above the largest per-cluster canonical-answer count any
+# experiment here asks for (1050 canonical answers spread over the 5 clusters of the
+# sparsest cluster-count sweep point is ~210 per cluster) -- so two different answer_ids
+# in the same cluster never collide on identical text. Colliding
 # text would make two distinct answers textually indistinguishable, which is a
 # duplicate-key artifact, not a modeling result, and would inflate false_hit_rate for
 # a reason unrelated to embedder or clustering quality.
@@ -168,7 +169,8 @@ def draw_half_life(scale, rng, shape=1.0, mode="exponential"):
     exponential with that scale. A Weibull with shape > 1 has a *lower* coefficient of
     variation than the exponential it replaces (shape=2 roughly halves it), so this
     misspecification makes the workload's staleness easier to predict, not harder, even
-    though the fitter's exponential assumption is technically wrong. Kept for reference.
+    though the fitter's exponential assumption is technically wrong; it is the mild
+    misspecification case, not the adversarial one.
 
     mode="mixture" draws from a 50/50 mixture of two exponentials, one with a fifth of
     the mean scale and one with 1.8 times it, same overall mean as the plain exponential

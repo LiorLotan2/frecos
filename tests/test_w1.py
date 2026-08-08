@@ -151,14 +151,15 @@ def test_valid_until_after_t(trace):
 
 
 def test_canonical_query_text_is_cluster_separable_under_a_real_embedder():
-    """Regression test for the exact bug this generator once had: the canonical query
-    template used to differ across clusters only in two embedded numbers
-    ("topic {cluster_id}-{answer_id}"), which a general-purpose sentence embedder
-    cannot use to recover cluster identity (adjusted Rand index 0.02-0.06, at
-    random-assignment level, see CHANGES.md). This asserts the real embedder-based
-    clustering pipeline now clears 0.5 -- not just that the template text differs
-    string-wise, which the mostly-shared "What is the current status of ... for ...?"
-    prefix would pass trivially even under the old bug.
+    """Asserts the real embedder-based clustering pipeline recovers cluster identity from
+    canonical query text at an adjusted Rand index above 0.5.
+
+    The check runs the actual embedder rather than comparing template strings, because a
+    template can differ across clusters and still carry no signal an embedder can use: a
+    template differing only in embedded numbers ("topic {cluster_id}-{answer_id}") scores
+    ARI 0.02-0.06, indistinguishable from random assignment. A string-difference assertion
+    would pass on such a template trivially, since the "What is the current status of ...
+    for ...?" prefix is shared across clusters either way.
 
     Downloads GPTCache's default ONNX embedder on first run (network required,
     cached afterward under /tmp so CI's own run and this test never redownload against

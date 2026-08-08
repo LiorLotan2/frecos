@@ -1,10 +1,22 @@
 """Fits a per-cluster staleness table from a workload trace's calibration split.
 
-Reads the trace's ground-truth expiry timestamp only as a raw JSON key on trace rows,
-before any row becomes a cache entry. EntryMeta's own copy of that field is the answer
-key and cache logic must never touch it. tests/invariants.py's leak check greps
-gptcache_ext/ for that field name outside metadata.py with no exception for this
-legitimate calibration-time read, so the key is assembled rather than spelled out.
+The fit consumes the workload generator's ground-truth expiry timestamp: for each
+calib-split row it models the duration valid_until - t, the interval over which the
+generator declares that row's answer correct. That timestamp is a label the generator
+supplies, not a signal a deployed cache could observe on its own, so every mode here --
+learned, global and oracle alike -- is calibrated against information a production system
+does not have. The read is offline and happens over raw trace rows, before any row
+becomes a cache entry; the serving path itself (the TTL gate, the eviction policies, the
+pipeline) sees only create_on, last_access, freq, regen_cost and size_bytes.
+check_no_valid_until_leak in tests/invariants.py enforces that division and allowlists
+this module as the one reader of the field under gptcache_ext/.
+
+Fitting this table outside the harness requires a different source for those durations:
+a staleness detector, or a feedback channel that labels a served answer as stale -- a
+user correction, a downstream verifier, a revalidation probe against the upstream source
+-- with the observed time from generation to that label standing in for valid_until - t.
+Absent such a channel the table is not fittable outside this harness, and the results of
+every mode should be read with that in mind.
 """
 import json
 import math
@@ -14,7 +26,6 @@ from typing import Dict, Iterable, List, Optional
 from gptcache_ext.contracts import ClusterStaleness
 
 MIN_OBSERVATIONS = 30
-EXPIRY_KEY = "valid" + "_until"
 
 
 class ClusterStalenessTable:
@@ -77,7 +88,9 @@ def _durations_by_cluster(rows: Iterable[dict]) -> Dict[int, List[float]]:
     for row in rows:
         if row.get("split") != "calib":
             continue
-        duration = row[EXPIRY_KEY] - row["t"]
+        # ground truth from the generator, not an observable cache signal: see the
+        # module docstring for what a deployment would need in its place
+        duration = row["valid_until"] - row["t"]
         if math.isinf(duration):
             continue
         durations[row["cluster_id"]].append(duration)

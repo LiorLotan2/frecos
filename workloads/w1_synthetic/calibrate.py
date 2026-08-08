@@ -1,7 +1,7 @@
 """Calibration check for the W1 generator's regen_cost and half_life distributions.
 
-The plan calls for fitting regen_cost against the Azure LLM Inference Trace and half_life
-against update-frequency patterns in a public news/catalog corpus. Neither dataset is
+The intended references are the Azure LLM Inference Trace for regen_cost and
+update-frequency patterns in a public news/catalog corpus for half_life. Neither dataset is
 reachable from this sandboxed environment (no network access, no bundled copy of either
 corpus). Rather than claim a fit this project never performed, this script generates a
 literature-informed synthetic reference distribution for each quantity and plots the

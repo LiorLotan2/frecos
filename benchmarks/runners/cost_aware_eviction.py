@@ -3,21 +3,20 @@ range of entries (not just gate-protected fresh ones), heterogeneous per-cluster
 regeneration costs (already how workloads.w1_synthetic.generator draws regen_cost -- no
 generator change needed), scored on cost_saved_usd rather than stale-hit-rate.
 
-Every prior ablation in this project ran with the gate on, which pre-filters out stale
-entries before eviction ever sees them -- eviction then only ever chooses among entries
-the gate has already certified fresh, so FreCoS's regen_cost and decay terms had nothing
-to differentiate on beyond what the gate had already decided. This is the first
-experiment in this project where FreCoS's eviction value function is tested on the
-metric it was designed to move (cost_saved_usd, not stale_hit_rate) without a gate
-already doing most of the work in front of it.
+The ablation's FreCoS row (row 5) runs with the gate on, and the gate pre-filters stale
+entries before eviction ever sees them: eviction then chooses only among entries the gate
+has already certified fresh, so FreCoS's regen_cost and decay terms have little left to
+differentiate on beyond what the gate has already decided. Turning the gate off here is
+what puts the eviction value function on the metric it was designed to move
+(cost_saved_usd, not stale_hit_rate) with nothing in front of it.
 
 Design: W1 eval split, gate disabled (NullGate), three eviction policies (FreCoS, LFU,
-LRU) x 5 seeds each, same trace scale as the main ablation (n_queries=3000). Cache size is 25,
-not the main ablation's 412: with the gate off and a real semantic index at the 0.8
-threshold, hit rate here is high enough that a 412-entry cache would not reliably fill
-under this reduced trace size, so this cache size is scaled down proportionally
-(25 = 100 * 3000/12000) from the value the original full-scale run measured as
-comfortably forcing real eviction pressure on every run.
+LRU) x 5 seeds each, same trace scale as the main ablation (n_queries=3000). Cache size is
+25, not the main ablation's 412: with the gate off and a real semantic index at the 0.8
+threshold, hit rate here is high enough that a 412-entry cache would not reliably fill at
+this trace size, and a cache that never fills never evicts. 25 entries is about 1.5% of the
+1650 distinct answer_ids this n_queries produces, small enough to force real eviction
+pressure on every run.
 """
 import os
 

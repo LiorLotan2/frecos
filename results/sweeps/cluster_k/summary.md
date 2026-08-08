@@ -3,14 +3,14 @@
 ## Setup
 
 W1, gate enabled, FreCoS eviction, lambda_source=learned. Fixed defaults while sweeping
-cluster_count_k: cache_size_entries=495, ttl_confidence=0.9. n_queries=3000,
-n_tenants=5 (reduced-scale rerun with the generator text fix, see
-results/brackets/summary.md). Four K points: 5, 10, 20, 50. n_clusters is varied at
-trace generation time, so the ground-truth cluster structure itself changes per point.
+cluster_count_k: cache_size_entries=495, ttl_confidence=0.9. n_queries=3000, n_tenants=5
+(the scale every experiment behind the report runs at, see results/brackets/summary.md).
+Four K points: 5, 10, 20, 50. n_clusters is varied at trace generation time, so the
+ground-truth cluster structure itself changes per point.
 
 Five distinct traces per point (seeds 0-4). 20 rows in results.csv, matching
-benchmarks.harness.CSV_COLUMNS (now including cluster_ari, n_useful_hits,
-useful_hit_rate).
+benchmarks.harness.CSV_COLUMNS, including cluster_ari, n_useful_hits and
+useful_hit_rate.
 
 ## Bootstrap method
 
@@ -34,8 +34,8 @@ overlap substantially at K=10/20/50, so hit_rate is not clearly distinguishable 
 those three at n=5 seeds. stale_hit_rate is similarly non-monotone (0.078, 0.068,
 0.082, 0.080), with wide, overlapping CIs at every point.
 
-cluster_ari now shows the *opposite* trend from the pre-fix rerun: it is highest at
-K=5 (0.451) and lowest at K=20 (0.272), rather than rising steadily with K. This is
+cluster_ari does not rise with K: it is highest at K=5 (0.451) and lowest at K=20
+(0.272), and K=50 (0.320) sits between the two. This is
 not explained by topic-vocabulary exhaustion -- CLUSTER_TOPICS has 51 entries, more
 than every K tested here (5/10/20/50), so every cluster gets a distinct topic phrase at
 every K, no cycling occurs. The more likely explanation is the ordinary k-means
@@ -48,7 +48,6 @@ reading of a non-monotone result with wide, overlapping CIs, not a confirmed eff
 a genuine investigation would need to hold calibration-observations-per-cluster fixed
 while varying K, which this sweep does not do.
 
-This result sits in a supplementary table (`analysis/figures/supplementary.csv`)
-rather than a headline figure, consistent with the pre-fix rerun's choice, since it
-still clears neither the effect-size nor confidence-interval bar the rest of this
-report's headline figures meet.
+This result sits in a supplementary table (`analysis/figures/supplementary.csv`) rather
+than a headline figure, since it clears neither the effect-size nor the
+confidence-interval bar the report's headline figures meet.
