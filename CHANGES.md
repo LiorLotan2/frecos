@@ -37,8 +37,8 @@ No numbers moved in this phase; it touched only comments, docstrings, and file n
 - Extended CI: lint now covers `benchmarks analysis workloads` in addition to
   `gptcache_ext tests`; added a `figures-consistency` job (regenerates all four PNGs from
   committed CSVs, fails the build on any diff — verified deterministic given a pinned
-  matplotlib version) and an `experiment-smoke` job (2 seeds × 1000 queries, no network
-  dependency, exercises the real experiment path on every commit).
+  matplotlib version) and an `experiment-smoke` job (2 seeds × 1000 queries, exercises the
+  real experiment path on every commit).
 - Added the three missing `results/*/summary.md` files
   (`brackets/misspecified`, `brackets/mixture`, `ablation/size_term_isolation`), derived
   directly from their committed CSVs.
@@ -104,19 +104,29 @@ before trusting any of them.
 - **3.2 (multiple-comparison correction):** done. `analysis/multiple_comparisons.py`
   implements Holm-Bonferroni (hand-rolled, scipy unavailable), with two primary
   comparisons designated up front (learned vs. global; gate-on vs. LFU floor) and every
-  other Mann-Whitney test treated as secondary. Applied to the actual rerun's p-values;
-  every previously-significant result stays significant after correction (largest
-  adjusted $p \approx 0.023$).
+  other Mann-Whitney test treated as secondary. On the current data (`make
+  multiple-comparisons` recomputes the whole family from the committed
+  `results/**/results.csv`), the ten-comparison secondary family has a smallest
+  Holm-adjusted $p$ of $0.090$, so **no secondary comparison survives $\alpha = 0.05$**;
+  the two designated primaries are reported uncorrected and both hold ($p \approx 0.028$
+  for brackets learned vs. global, $p \approx 0.009$ for the ablation's gate-on vs. LFU
+  floor). That outcome is arithmetically forced as much as empirical: at 5 seeds per arm
+  the smallest two-sided $p$ `analysis/stats.py`'s normal approximation can return is
+  $0.009023$, and $0.009023 \times 10 = 0.090234 > 0.05$, so no ten-member family at this
+  seed count can clear the threshold no matter how clean the separation.
 - **3.3 (fair eviction test):** done, and found a real bug in the first attempt.
   `benchmarks/runners/cost_aware_eviction.py` (gate off, heterogeneous cost, scored on
   `cost_saved_usd`) first ran at `cache_size_entries=1650` (matching the main ablation)
-  and produced byte-identical results across FreCoS/LFU/LRU — traced to the cache never
+  and produced identical cache metrics across FreCoS/LFU/LRU, traced to the cache never
   filling under the real semantic index's high hit rate (339–372 misses per run, under
   budget), so eviction never ran at all. Fixed by measuring the trace's actual working
   set with an unlimited cache (339–474 distinct entries needed) and rerunning at
-  `cache_size_entries=100`. The fixed run shows a real, significant effect: FreCoS beats
-  LFU on cost saved ($p \approx 0.0009$, $r \approx 0.74$), LRU maximizes cost saved but
-  at more than double FreCoS's stale-hit-rate.
+  `cache_size_entries=100`. The fixed run showed a significant effect at the time: FreCoS
+  beat LFU on cost saved ($p \approx 0.0009$, $r \approx 0.74$), with LRU maximizing cost
+  saved but at more than double FreCoS's stale-hit-rate. **Superseded:** that effect does
+  not survive Phase 7's generator fix and Phase 8's cost-metric fix — on the current data
+  FreCoS versus LFU on cost saved is $U_a = 13.0$, $p \approx 0.917$, $r \approx 0.04$, no
+  effect (see Phase 8 below, and `make multiple-comparisons`).
 - **3.4 (environment capture):** done. `benchmarks/capture_env.py` writes `env.json`
   (CPU model, core counts, RAM, OS, kernel, Python version) next to every experiment's
   `results.csv`; wired into all seven runners. One gap: `results/brackets/` has no
@@ -132,8 +142,8 @@ before trusting any of them.
 - Every results table and figure in Section 5 regenerated from the Phase 2/3 rerun.
   Bracketing, its calibration-sparse follow-up, and both misspecification checks
   (Weibull, adversarial mixture) all show the identical reversed pattern.
-- Ablation cut from six rows to five (size-term row gone); the new byte-identical-rows
-  finding in rows 1–3 traced to the same cache-sizing artifact fixed in the new
+- Ablation cut from six rows to five (size-term row gone); the new identical-metrics
+  finding in rows 1-3 traced to the same cache-sizing artifact fixed in the new
   cost-aware-eviction subsection, not left unexplained.
 - New `ssec:costaware` subsection reports the fixed fair test of FreCoS's cost term.
 - `useful-hit-rate` redefined as a per-hit fraction rather than a fraction of all scored
@@ -141,12 +151,14 @@ before trusting any of them.
   zero before real clustering/semantic index existed to make it non-zero).
 - Named the stale-hit-rate/oracle-ceiling circularity as an explicit limitation
   (Discussion), per the remediation brief's Phase 4 item 3.
-- Bibliography: fixed 3 factual errors found by independently re-verifying all 11
-  references against arXiv/GitHub directly (not from memory): `bitonfriedman2026`'s title
+- Bibliography: fixed 3 factual errors found by re-checking all 11 references entry by
+  entry. Nothing in this repo records a retrieved copy of any reference, so the entries
+  stand as re-checked against the identifiers they carry and against local knowledge of
+  the works, not as verified against fetched sources. `bitonfriedman2026`'s title
   and first author name were wrong; `cortex2026`'s year was wrong (arXiv ID `2509.17360`
   is September 2025, not 2026 — the exact bug the brief flagged) and it also carried two
-  unverifiable claims ("NSDI 2026", "earlier preprint: Asteria") that no source
-  corroborated, removed; `tinylfu2015` was missing its third author. Converted all
+  claims ("NSDI 2026", "earlier preprint: Asteria") that nothing else in the report or
+  this repo corroborates, removed; `tinylfu2015` was missing its third author. Converted all
   bracket-style `[1]`–`[11]` citations to `\cite{}`; deleted the unused
   `report/references.bib` since `thebibliography` (not BibTeX) is what's kept.
 - Figure/file naming fixed to match presentation order:
@@ -181,8 +193,10 @@ before trusting any of them.
   (abstract, Section 5.3, Discussion, Conclusion): LRU strictly dominates FreCoS on this
   test (more cost saved, fewer stale hits), because recency of access happens to track
   recency of write on this trace, so LRU gets a freshness benefit for free with no
-  staleness model at all. FreCoS still beats the LFU floor on cost saved with a large
-  effect; that claim was correct and is unchanged.
+  staleness model at all. FreCoS still beat the LFU floor on cost saved with a large
+  effect at this point; that claim was correct on Phase 5's data and was left unchanged
+  then. **Superseded by Phase 8:** once `cost_saved_usd` excludes false hits, that
+  comparison is $U_a = 13.0$, $p \approx 0.917$, $r \approx 0.04$ — no effect.
 - **Clustering result reframed as a diagnosed measurement failure, not a negative
   result:** the abstract, Introduction contribution #2, Discussion, and Conclusion
   presented "per-cluster staleness learning does not beat pooling" as a finding. Root
@@ -237,7 +251,9 @@ against the grading rubric. Everything below was verified directly, not asserted
   `results/cost_aware_eviction/results.csv` confirms `11.83` (95% CI `9.17, 13.46`) is
   right; fixed the table. All nine other `summary.md` files were checked the same way
   and found consistent with their CSVs — this was an isolated transcription error, not
-  a pattern.
+  a pattern. **Superseded twice since:** Phase 7's rerun at 3,000 queries and 5 seeds
+  moves that median to `1.22`, and Phase 8's false-hit exclusion moves it to `0.138`,
+  which is what the committed CSV and `summary.md` carry.
 - **Report page count (12 pages, not 16):** the previous pass left the report at 16
   pages against the 8--12 page guideline, worse than its own claim of "~13.2 pages."
   Fixed by: dropping the font from 11pt to 10pt (still within the guideline's ≥10pt
@@ -270,8 +286,11 @@ and diffed), not asserted.
   `n_queries=3000, seed=0` against the real ONNX embedder, and zero duplicate canonical
   texts across 1650 answers at that scale. Added
   `tests/test_w1.py::test_canonical_query_text_is_cluster_separable_under_a_real_embedder`,
-  asserting `cluster_ari > 0.5` on this exact configuration as a permanent regression
-  guard — this test downloads and runs the real ONNX embedder (network required on
+  bounding `cluster_ari` on this exact configuration as a permanent regression guard. The
+  bounds are `0.2 < cluster_ari < 0.9`, set from the failure regime the guard exists to
+  catch (the old numeric-only template's 0.02--0.06, against a chance level of 0) rather
+  than from the current template's own score, and they hold for all five evaluation seeds
+  — this test downloads and runs the real ONNX embedder (network required on
   first run, cached under `/tmp` after), the same requirement `benchmarks.
   experiment_smoke` already has.
 
@@ -284,9 +303,12 @@ and diffed), not asserted.
   experiment's cache size was re-derived empirically the same way the original did,
   confirming 25 entries forces real eviction pressure at this scale). Median
   `cluster_ari` across the rerun is 0.40--0.45, and the report's central finding
-  reverses again, this time correctly: learned beats global with a large, significant
-  effect ($r \approx -0.84$, $p \approx 0.028$ on the main bracket), and separates
-  significantly from oracle in the expected direction ($r \approx 0.92$) — the shape the
+  reverses again, this time correctly: learned beats global with a large effect
+  ($r \approx -0.84$, $p \approx 0.028$ on the main bracket — designated primary
+  comparison P1, so reported uncorrected, and it holds at $\alpha = 0.05$), and separates
+  from oracle in the expected direction ($r \approx 0.92$, raw $p \approx 0.016$, but this
+  one is a secondary comparison whose Holm-adjusted $p$ is $0.114$, so it does not hold at
+  $\alpha = 0.05$) — the shape the
   pre-Phase-2 report originally claimed, now backed by a workload a real embedder can
   actually separate. `false_hit_rate` drops from ~0.97 to ~0.90--0.91, not eliminated:
   direct inspection shows the residual is now same-cluster, different-aspect query
@@ -301,7 +323,9 @@ and diffed), not asserted.
   50--95% band every committed result actually runs in. Now passes a real
   `benchmarks.semantic_index.SemanticIndex` and `benchmarks.embedding_pipeline.
   prepare_trace` (real k-means over embeddings), and asserts `hit_rate >= 0.20` to make
-  a silent fallback to the exact-match regime fail loudly rather than pass green.
+  a silent fallback to the exact-match regime fail loudly rather than pass green. The real
+  path brings the real embedder with it, so the `experiment-smoke` CI job added in Phase 1
+  now needs network on a cold cache to fetch the ONNX model.
 
 - **P1 — `analysis/fig3_cache_size.py`'s knee is now computed, not hardcoded.** The
   module had `KNEE_SIZE = 1980` / "30% of working set" left over from before a rerun
@@ -390,6 +414,93 @@ and diffed), not asserted.
   second from-scratch full-scale timing run on top of the P0 rerun itself. Flagging
   this as unverified rather than silently claiming it is now accurate at either scale.
 
+## Phase 8 — Report polish, then the five known code defects
+
+Two passes on the `phase-8/report-polish` branch. The first rewrote the report for a
+final-version voice (no meta-commentary about earlier drafts, 12 pages including the
+appendix, a general abstract, no section-roadmap paragraph) and stopped labelling the
+harness's gate-off eviction baseline "LRU" when it was really insertion order. The second
+fixed the defects that label was working around, which invalidated the committed numbers
+and forced another rerun.
+
+- **`bump_freq` now advances `last_access`.** `benchmarks/harness.py`'s
+  `ExactMatchIndex.bump_freq` incremented `freq` but left `last_access` at its insertion
+  value, so the LRU policy was really FIFO and the report had to say so. It now sets
+  `last_access = now` and leaves `create_on` alone, which is what the staleness invariant
+  requires (`tests/invariants.py` checks that staleness decisions read creation time and
+  never last-access time). `benchmarks/semantic_index.py` inherits the fixed method. The
+  ablation's rows 1--3 still tie seed by seed, and so do rows 4--5, for one measured
+  reason: instrumenting `select_victim` across all 25 ablation runs records zero calls and
+  zero evictions in every row. Against the 412-entry budget the resident set peaks at
+  256--291 entries, because entries are keyed by query text and a repeated miss on a
+  resident text replaces its entry rather than adding one. The five rows therefore
+  collapse to two distinct configurations, gate off and gate on, so the ablation measures
+  the gate alone; `results/ablation/summary.md` states this and points at
+  `results/cost_aware_eviction/` (25-entry budget, 1385--1586 `select_victim` calls per
+  run) as the only experiment that exercises the eviction value function.
+
+- **`peak_rss_mb` is now a real peak.** It was a single `memory_info().rss` reading taken
+  after the replay finished. `_replay` now samples RSS every 100 scored queries
+  (`RSS_SAMPLE_EVERY`) and keeps the maximum, sampling outside the `perf_counter` region
+  around `decide()` so it never lands in the measured overhead. The reported values fell
+  (206.1 MB to 179--184 MB) because the old post-replay reading included allocations the
+  replay itself had already released.
+
+- **`INDEX_THRESHOLD` renamed and documented.** It was named as if it were a semantic
+  similarity threshold, but it is only ever passed alongside `ExactMatchIndex`, whose
+  `search()` returns a fixed match rank or `None`. Renamed to `EXACT_MATCH_THRESHOLD`,
+  with `INDEX_MATCH_RANK` next to it and a comment stating that every runner behind the
+  report passes `benchmarks.embedding_pipeline.SEMANTIC_THRESHOLD` (0.8) explicitly
+  instead.
+
+- **`cost_saved_usd` now excludes false hits, not just stale ones.** The metric change
+  specified in Phase 5 and deferred in Phase 7 is applied: it sums `regen_cost` over
+  `is_useful_hit(r)` rows only. At this workload's ~0.90 false-hit-rate that drops every
+  absolute cost value roughly tenfold, which is the point: the old number was an upper
+  bound, not a measurement. `tests/test_metrics.py` gains
+  `test_cost_saved_excludes_false_hits_as_well_as_stale_ones` and its existing derivation
+  expectation moves 0.10 to 0.08.
+
+- **Figure fonts are legible at the size the report renders them.** `analysis/common.py`
+  used a 7-inch source width for figures typeset into a 3.9-inch or 3.0-inch slot, which
+  scaled 11pt type down to under 5pt on the page. Source dimensions are now chosen so
+  each figure lands near 1:1 at its intended width (`FIG_WIDTH`/`FIG_HEIGHT` for the
+  0.62\textwidth figures, `FIG_WIDTH_SMALL`/`FIG_HEIGHT_SMALL` for the minipage pair),
+  putting displayed labels at about 10.4pt against the report's 11pt body. Three follow-on
+  defects surfaced once the type was large enough to read: fig2's y-axis label overflowed
+  the canvas and rendered as "95% C" (fixed by giving that one figure more height, since
+  its rotated row labels eat into the axes), fig3's knee annotation ran past the right
+  spine and sat on the plateau line (now placed in axes-fraction coordinates and
+  shortened, with the caption carrying the full sentence), and fig4's lower panel was
+  labelled `useful-fraction-of-hits` while the report, the CSV column and
+  `benchmarks/metrics.py` all call it useful-hit-rate (now consistent). Figures were
+  regenerated inside the Linux container, keeping them byte-consistent with what CI's
+  `figures-consistency` job produces.
+
+- **Rerun and renumbered.** Fixes 1 and 4 change committed results, so every experiment
+  behind Section 5 was rerun at the same 3,000 queries and 5 seeds, on the same Python
+  3.13 environment recorded in `results/brackets/env.json`. Reproducibility was checked
+  before trusting the rest: the brackets global seed-0 run reproduced its committed
+  `n_hits` and `stale_hit_rate` exactly, with only `cost_saved_usd` moving. Every
+  stale-hit-rate, hit-rate, false-hit-rate, useful-hit-rate and `cluster_ari` number in
+  the report is unchanged; the cost columns, the latency/resource table, and the
+  cost-aware eviction section are not.
+
+- **The cost-aware eviction result flipped, and the report now says so.** With false hits
+  excluded, FreCoS versus LFU on cost saved goes from `U_a=21.0, p ~ 0.076, r ~ 0.68` to
+  `U_a=13.0, p ~ 0.917, r ~ 0.04`: no effect. Real LRU beats FreCoS on cost saved
+  (`U_a=5.0, p ~ 0.117, r ~ -0.60`) and separates perfectly from it on stale-hit-rate
+  (`U_a=25.0, p ~ 0.009, r ~ 1.00`), and separates perfectly from LFU too
+  (`U_a=0.0, p ~ 0.009, r ~ -1.00`). The abstract, contribution 3, Section 5.3, the
+  Discussion and the Conclusion now report cost-aware eviction as a negative result
+  rather than a narrow win, and trace the mechanism to creation age tracking access
+  recency on this trace.
+
+- **Verified, not asserted:** 101/101 tests pass (`make test`, 16.8 s), `flake8` is clean
+  over `gptcache_ext tests benchmarks analysis workloads`, `make multiple-comparisons`
+  reproduces every U/r/p triple quoted in the report and the summaries from the committed
+  CSVs, the report builds with zero overfull hboxes, and the PDF page-tree `/Count` is 12.
+
 ## What was not fixed, and why
 
 - **Seed count:** every experiment in this rerun uses 5 seeds, not the original design's
@@ -397,13 +508,10 @@ and diffed), not asserted.
   cost of a from-scratch embedding-bound rerun at 12,000 queries and 10 seeds is still
   roughly 9 hours; flagged in the report's Discussion and Conclusion as a named
   statistical-power cost, not silently absorbed into the reported numbers.
-- **`cost_saved_usd` still does not exclude false hits.** The metric fix (also exclude
-  `is_false_hit`, not just `is_stale_hit`) remains fully specified (Phase 5) but not
-  applied, since `cost_saved_usd` already carries an explicit false-hit caveat in the
-  report and the change would touch every committed `results.csv` again on top of the
-  P0 rerun this phase already did.
 - **`results/ablation/size_term_isolation/`:** still kept as a historical,
-  no-longer-regenerable artifact, unchanged from Phase 2d.
+  no-longer-regenerable artifact, unchanged from Phase 2d. Its `cost_saved_usd` column
+  predates the Phase 8 metric change and its summary now says so; the conclusion it
+  supports rests on stale-hit-rate and hit-rate, which the change does not touch.
 - **Biton and Friedman's released policy, and Cortex's LCFU:** still not run directly
   against this workload; the eviction axis is still measured only against count-based
   baselines and FreCoS. Listed as future work in the Conclusion.

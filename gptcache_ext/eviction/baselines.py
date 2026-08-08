@@ -1,14 +1,12 @@
 """Baseline eviction policies conforming to the EvictionPolicy protocol: LRU, LFU, and a
 substitute for Biton & Friedman's released policy (arXiv:2603.03301).
 
-Biton & Friedman's code was not reachable in this build environment: this repo has no
-network access to arXiv or GitHub, and a search of the repo and vendored GPTCache tree
-turned up no local copy or cached artifact of their release. Per the project's design, the
-comparator is not silently dropped: this
-module instead ships BitonFriedmanSubstituteEviction, a documented LFU-with-cost variant
-used in its place. Its formula and the reasoning behind it are in the class docstring below.
-This is a substitution, not a reproduction of their method, and any report referencing it
-must say so.
+Biton & Friedman's released implementation is not vendored here: neither this repo nor the
+pinned GPTCache tree under vendor/ carries a copy or cached artifact of it, and it was
+never obtained. Rather than drop the comparator silently, this module ships
+BitonFriedmanSubstituteEviction, a documented LFU-with-cost variant used in its place; its
+formula and the reasoning behind it are in the class docstring below. This is a
+substitution, not a reproduction of their method, and the report labels it as one.
 """
 from typing import Sequence
 
@@ -44,17 +42,20 @@ class LFUEviction:
 class BitonFriedmanSubstituteEviction:
     """Documented substitute for Biton & Friedman's released policy.
 
-    Formula: value = freq / regen_cost. Reasoning: their paper's own finding is that
+    Formula: value = freq * regen_cost. Reasoning: their paper's own finding is that
     frequency-based policies are the strong baseline on semantic workloads (LRU is weak),
     and this project's one signal beyond plain frequency that a cost-aware comparator
-    should plausibly use is regen_cost, which is already on EntryMeta. Dividing frequency
-    by cost means a low-frequency entry that is also cheap to regenerate is evicted before
-    a low-frequency entry that is expensive to regenerate - a frequency floor with a cost
-    tiebreak, not a reimplementation of their recency/frequency/locality combination.
+    should plausibly use is regen_cost, which is already on EntryMeta. Multiplying
+    frequency by cost means a low-frequency entry that is also cheap to regenerate is
+    evicted before a low-frequency entry that is expensive to regenerate, the direction
+    GDSF's cost-times-frequency score takes and the direction FreCoS's own cost term takes.
+    It is a product, not a lexicographic frequency-then-cost order: a cheap enough entry
+    can be evicted ahead of a rarer but expensive one. Not a reimplementation of their
+    recency/frequency/locality combination.
     """
 
     def value(self, meta: EntryMeta, now: float) -> float:
-        return meta.freq / max(meta.regen_cost, 1e-12)
+        return meta.freq * meta.regen_cost
 
     def select_victim(self, metas: Sequence[EntryMeta], now: float) -> int:
-        return _select_victim_by(metas, lambda m: m.freq / max(m.regen_cost, 1e-12))
+        return _select_victim_by(metas, lambda m: m.freq * m.regen_cost)

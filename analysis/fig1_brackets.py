@@ -1,7 +1,8 @@
-"""Figure 2: the bracket, global/learned/oracle lambda on one axis.
+"""Figure 1 in the report (label fig:brackets): the bracket, global/learned/oracle
+lambda on one axis.
 
 From results/brackets/results.csv. The calibration_sweep robustness check
-(results/brackets/calibration_sweep/results.csv, a rerun at ~10x sparser
+(results/brackets/calibration_sweep/results.csv, the same design at sparser
 per-cluster calibration) is overlaid as a second set of points rather than a
 separate figure, since it is the same three-way comparison at a different
 sample size and the point of showing it is exactly that the picture doesn't

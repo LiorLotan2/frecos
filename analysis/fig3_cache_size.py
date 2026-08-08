@@ -1,12 +1,12 @@
-"""Figure 4: cache-size sweep with the knee marked.
+"""Figure 3 in the report (label fig:cachesize): cache-size sweep with the knee
+marked.
 
 From results/sweeps/cache_size/results.csv. The knee is computed here, not
 hardcoded: the smallest cache size whose median hit_rate is within
-KNEE_TOLERANCE (relative) of every larger size's median. Hardcoding this value
-is exactly the bug this module used to have (KNEE_SIZE = 1980 / "30%" left in
-place after a rerun had already moved the true knee to 990 / 15%, see
-CHANGES.md) -- computing it from the same results.csv the plot itself reads
-means the annotation cannot drift out of sync with the data again.
+KNEE_TOLERANCE (relative) of every larger size's median. Deriving it from the
+same results.csv the plot itself reads means the annotated knee and the plotted
+curve cannot disagree, which a hardcoded constant would allow whenever the
+underlying results change.
 """
 from common import load_csv, group_values, bootstrap_median_ci, new_figure, save_figure, REPO_ROOT
 
@@ -38,12 +38,14 @@ def main():
     knee_size = find_knee(x, med)
     knee_pct = round(100 * knee_size / WORKING_SET_ANSWER_IDS)
 
-    fig, ax = new_figure()
+    fig, ax = new_figure(small=True)
     ax.errorbar(x, med, yerr=[lo, hi], fmt="o-", capsize=4, color="#2c3e50")
     ax.axvline(knee_size, color="#c0392b", linestyle="--", linewidth=1.2)
-    knee_y = med[x.index(knee_size)]
-    ax.annotate(f"knee: {knee_size} entries\n({knee_pct}% of working set)",
-                xy=(knee_size, knee_y), xytext=(knee_size + 250, knee_y - 0.0015),
+    # Axes-fraction placement, not data coordinates: at this figure's rendered width the
+    # long form of this label ran past the right spine and sat on top of the plateau.
+    # The caption carries the full sentence; the annotation only has to mark the line.
+    ax.annotate(f"knee: {knee_size} entries ({knee_pct}%)",
+                xy=(0.30, 0.06), xycoords="axes fraction",
                 fontsize=10, color="#c0392b")
     ax.set_xlabel("cache size (entries)")
     ax.set_ylabel("hit rate (median, 95% CI)")

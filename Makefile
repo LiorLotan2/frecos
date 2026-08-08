@@ -5,7 +5,7 @@ PYTEST := $(RUNPY) -m pytest
 .PHONY: install test bench-smoke experiment-smoke verify \
 	experiments exp-brackets exp-ablation exp-brackets-calibration-sweep \
 	exp-brackets-misspecified exp-brackets-mixture exp-sweeps exp-cost-aware-eviction \
-	figures report
+	figures multiple-comparisons report
 
 install:
 	@$(PYTHON) -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" \
@@ -51,6 +51,9 @@ experiments: exp-brackets exp-ablation exp-brackets-calibration-sweep \
 
 figures:
 	PYTHONPATH=vendor/gptcache:.:analysis $(PYTHON) analysis/make_figures.py
+
+multiple-comparisons:
+	PYTHONPATH=vendor/gptcache:.:analysis $(PYTHON) analysis/multiple_comparisons.py
 
 report:
 	cd report && tectonic report.tex

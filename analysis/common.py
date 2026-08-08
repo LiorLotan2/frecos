@@ -1,11 +1,11 @@
-"""Shared plotting and stats helpers for the A11 figures.
+"""Shared plotting and stats helpers for the report's figures.
 
-Bootstrap method mirrors the one already used in every results/*/summary.md:
+Bootstrap method matches the one used in every results/*/summary.md:
 percentile bootstrap, 10,000 resamples with replacement, seeded stdlib random
 (seed 12345), median of each resample, 95% CI from the 2.5th/97.5th
-percentiles. Reusing the same seed and method here means the CIs plotted
-match the ones already reported in the summaries, rather than introducing a
-second, slightly different set of numbers for the same data.
+percentiles. Sharing the same seed and method means the CIs plotted here are
+the same numbers the summaries report, rather than a second, slightly
+different set for the same data.
 """
 import csv
 import random
@@ -24,8 +24,16 @@ FIGURES_DIR = Path(__file__).resolve().parent / "figures"
 BOOTSTRAP_SEED = 12345
 BOOTSTRAP_RESAMPLES = 10000
 
-FIG_WIDTH = 7.0
-FIG_HEIGHT = 4.5
+# Figure source dimensions are chosen so that a figure rendered at its intended width in
+# report/report.tex lands close to 1:1, which keeps its tick and axis labels near the
+# report's own 10-11pt body size. A 7-inch-wide source scaled into a 3.9-inch slot shrinks
+# 11pt type to under 5pt, which is what these two presets exist to avoid.
+#   default: rendered at 0.62\textwidth (about 3.9in) -> fig1, fig2
+#   small:   rendered at 0.48\textwidth (about 3.0in) in a minipage pair -> fig3, fig4
+FIG_WIDTH = 4.2
+FIG_HEIGHT = 2.7
+FIG_WIDTH_SMALL = 3.3
+FIG_HEIGHT_SMALL = 2.5
 FIG_DPI = 150
 FONT_SIZE = 11
 
@@ -64,8 +72,11 @@ def group_values(rows, key_fn, value_col):
     return groups
 
 
-def new_figure():
-    fig, ax = plt.subplots(figsize=(FIG_WIDTH, FIG_HEIGHT))
+def new_figure(small=False, height=None):
+    width, default_height = (
+        (FIG_WIDTH_SMALL, FIG_HEIGHT_SMALL) if small else (FIG_WIDTH, FIG_HEIGHT)
+    )
+    fig, ax = plt.subplots(figsize=(width, height or default_height))
     return fig, ax
 
 

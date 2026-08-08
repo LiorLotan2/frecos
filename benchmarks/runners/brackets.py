@@ -2,27 +2,26 @@
 global (pooled) and oracle (ground-truth) brackets on stale-hit-rate?
 
 Design: W1 eval split, three lambda_source values (global, learned, oracle) crossed with
-10 seeds each, gate enabled, FreCoS eviction, cache size fixed at one point. Everything
+5 seeds each, gate enabled, FreCoS eviction, cache size fixed at one point. Everything
 else held constant except seed.
 
-Ten distinct traces, one per seed, not one trace replayed ten times. The pipeline is fully
-deterministic given a trace (eviction and the gate have no randomness of their own), so
-replaying the same trace ten times would produce byte-identical rows for every "seed" and
-there would be nothing to bootstrap over. Generating one fresh trace per seed is the only
-way a 10-seed design does anything.
+Five distinct traces, one per seed, not one trace replayed five times. The pipeline is
+fully deterministic given a trace (eviction and the gate have no randomness of their own),
+so replaying the same trace would produce byte-identical rows for every "seed" and there
+would be nothing to bootstrap over. Generating one fresh trace per seed is the only way a
+multi-seed design does anything.
 
 Cache size: n_queries=3000 with the generator's default stream fractions yields 1650
 distinct answer_ids (1050 canonical + 600 longtail; paraphrases and repeats reuse existing
 answer_ids so they don't add to this count, and this count is deterministic given n_queries,
-independent of seed). 412 entries is 25% of that, inside the 20-30% range chosen as a
-placeholder mid-sweep point ahead of the actual cache-size sweep.
+independent of seed). 412 entries is 25% of that, a mid-range point in the 20-30% band; the
+cache-size axis itself is swept separately in sweeps.py.
 
-n_queries=3000 and 5 seeds (not the original 12000 and 10) since this rerun follows the
-generator text fix in workloads/w1_synthetic/generator.py (see CHANGES.md): the fix
-invalidated every previously committed results.csv, and rerunning at the original scale
-was judged not worth the ~9-hour, almost-entirely-embedding cost for validating a fix
-whose thesis-level conclusion (does per-cluster fitting recover a rate well, given
-clusters a real embedder can actually separate) does not depend on trace size.
+Scale: n_queries=3000, 5 seeds. Wall-clock here is almost entirely embedding cost, which
+grows with trace size, and the question this experiment answers -- whether per-cluster
+fitting recovers a rate well, given clusters a real embedder can actually separate -- does
+not depend on trace size. The ablation, the sweeps and the misspecification brackets hold
+this same scale, so their rows stay comparable with this experiment's.
 """
 import os
 

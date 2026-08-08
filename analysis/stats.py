@@ -2,17 +2,15 @@
 this sandbox, same reason analysis/multiple_comparisons.py and
 gptcache_ext/staleness/cluster_accuracy.py hand-roll their own statistics).
 
-This module exists to close a reproducibility gap, not just fix a label: every
-Mann-Whitney U/p/effect-size triple quoted in results/*/summary.md and report/report.tex
-was previously computed by hand and re-typed, with no script anyone could rerun to
-regenerate them. mann_whitney_u() below is that script.
+mann_whitney_u() below is the single implementation behind every Mann-Whitney
+U/p/effect-size triple quoted in results/*/summary.md and report/report.tex, so those
+numbers are regenerable from the per-seed CSVs rather than computed by hand and re-typed.
 
-Effect size is rank-biserial correlation, r = 2*U_a/(n_a*n_b) - 1, NOT r = |z|/sqrt(n1+n2)
-(a z-based rank correlation that an earlier version of this project mislabeled
-"rank-biserial"). The two formulas disagree materially -- e.g. a comparison with
-U_a = 0.0 (complete separation, every value in a below every value in b) gives
-r = |z|/sqrt(n1+n2) something less than 1 under the old formula but the correct
-rank-biserial r = -1.0 (perfect, signed effect) under this one. Sign here means: positive
+Effect size is rank-biserial correlation, r = 2*U_a/(n_a*n_b) - 1, NOT r = |z|/sqrt(n1+n2),
+which is a z-based rank correlation and not rank-biserial at all. The two formulas disagree
+materially -- e.g. a comparison with U_a = 0.0 (complete separation, every value in a below
+every value in b) gives some magnitude below 1 under r = |z|/sqrt(n1+n2), against the
+correct rank-biserial r = -1.0 (perfect, signed effect). Sign here means: positive
 r indicates sample_a tends toward higher values than sample_b; the magnitude is what
 Section 4's "large effect" language in the report refers to.
 """

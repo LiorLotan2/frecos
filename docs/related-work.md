@@ -5,7 +5,8 @@ throughout.
 
 ## Biton & Friedman, "From Exact Hits to Close Enough" (arXiv:2603.03301, Feb 2026)
 
-This is the closest prior art and the primary comparator. The paper proves that optimal
+This is the closest prior art, and the work the ablation's substitute comparator stands in
+for. The paper proves that optimal
 offline semantic-cache eviction is NP-hard, supplies polynomial-time heuristics, and presents
 online eviction policies that combine recency, frequency, and locality signals. It evaluates
 these policies on GPTCache and releases its implementation, which is why GPTCache was chosen
@@ -16,8 +17,10 @@ show that LRU is a poor eviction policy for most semantic caching workloads and 
 frequency-based policies are strong baselines by comparison — which is why LFU-class
 policies, not LRU, are treated as the floor for comparison in this project's ablation; an
 improvement measured only against LRU would not be a result. Second, because their
-implementation is released, it is used directly as this project's primary eviction
-comparator rather than reimplemented from the paper's description.
+implementation is released and targets GPTCache, GPTCache is the substrate on which their
+policy could be run directly. It was never obtained here, so the eviction comparator is the
+documented substitute in `gptcache_ext/eviction/baselines.py`, not their code, and no run
+under `results/` exercises their policy.
 
 The delta versus FreCoS: Biton & Friedman's policies combine recency, frequency, and
 locality, all of which are access-pattern signals derived from how a cached entry has been
@@ -25,13 +28,12 @@ queried. FreCoS adds two signals that are orthogonal to access pattern — regen
 and content validity over time — and evaluates against a correctness metric, stale-hit-rate,
 that their setting does not define at all.
 
-## Cortex (NSDI '26; arXiv:2509.17360, v1 titled "Asteria")
+## Cortex (arXiv:2509.17360, September 2025)
 
-Cite this work by its current title, Cortex, not by its v1 preprint name, Asteria; the older
-name still circulates in other papers' bibliographies and citing it correctly matters for
-A12. Cortex's eviction policy, LCFU, scores each cache entry as
-`log(freq+1)·log(cost·10³+1)·log(lat+1)·log(staticity+1)/size`, combined with a TTL-based
-purge. It is multiplicative, cost-aware, frequency-aware, staleness-aware, and size-
+Cited as an arXiv preprint: no peer-reviewed venue for it is corroborated, and the report's
+bibliography carries it as a preprint accordingly. Cortex's eviction policy, LCFU, scores each
+cache entry as `log(freq+1)·log(cost·10³+1)·log(lat+1)·log(staticity+1)/size`, combined with a
+TTL-based purge. It is multiplicative, cost-aware, frequency-aware, staleness-aware, and size-
 normalized — structurally the closest published eviction formula to FreCoS's value function.
 
 The delta versus FreCoS is narrow and specific: Cortex's staleness term is a static

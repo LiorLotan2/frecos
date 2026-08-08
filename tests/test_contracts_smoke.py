@@ -1,7 +1,8 @@
-"""Smoke test for the scaffold: contracts import and construct.
+"""Smoke test for gptcache_ext.contracts: the module imports and its types construct.
 
-Not the invariant suite or the oracle (those belong to A2). This just proves the
-harness runs cleanly on a fresh clone before any other agent's code exists.
+Deliberately shallow, and no substitute for the invariant suite (tests/invariants.py) or
+the oracle comparison (tests/test_oracle_agreement.py). It only pins the enum values and
+the immutability of the two frozen dataclasses every other module builds on.
 """
 from gptcache_ext.contracts import Decision, EntryMeta, ClusterStaleness
 

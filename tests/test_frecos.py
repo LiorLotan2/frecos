@@ -227,8 +227,8 @@ def test_lfu_evicts_least_frequently_used():
 
 
 def test_biton_friedman_substitute_prefers_cheap_low_freq():
-    cheap_low_freq = make_meta(entry_id=1, freq=1.0, regen_cost=1.0)
-    expensive_low_freq = make_meta(entry_id=2, freq=1.0, regen_cost=0.001)
+    cheap_low_freq = make_meta(entry_id=1, freq=1.0, regen_cost=0.001)
+    expensive_low_freq = make_meta(entry_id=2, freq=1.0, regen_cost=1.0)
     victim = BitonFriedmanSubstituteEviction().select_victim(
         [cheap_low_freq, expensive_low_freq], NOW
     )

@@ -12,7 +12,7 @@ cluster is unchanged, but the shape is not. The fitter still assumes exponential
 wrong by construction.
 
 Design is otherwise identical to brackets.py: same trace scale, same cache size, same three
-lambda_source values, five seeds each (reduced-scale rerun, see brackets.py's docstring).
+lambda_source values, five seeds each.
 oracle_lambdas still uses 1/half_life_scale, the true mean rate, since that is the best a
 constant-hazard oracle can encode; the Weibull's shape parameter has no equivalent slot in
 this project's staleness table.

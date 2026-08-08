@@ -138,11 +138,11 @@ that figure has not been revalidated at the reduced scale this rerun uses -- tre
 | `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` (cluster_k varies n_clusters, which changes the trace's canonical-query text and so cannot reuse most of the embedding cache the other experiments built) |
 | `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Table `tab:costaware` |
 
-`make experiments` runs all seven sequentially. (An earlier eighth runner,
-`benchmarks/runners/size_term_isolation.py`, was removed after its own finding -- the
-committed `results/ablation/size_term_isolation/` is no longer regenerable, since
-FreCoS's eviction value function no longer has a size-normalization term to isolate;
-see `gptcache_ext/eviction/frecos.py`'s module docstring and `CHANGES.md`.)
+`make experiments` runs all seven sequentially. One committed result set,
+`results/ablation/size_term_isolation/`, has no runner and cannot be regenerated:
+FreCoS's eviction value function carries no size-normalization term to isolate, which
+is itself what that result established. See `gptcache_ext/eviction/frecos.py`'s module
+docstring and `CHANGES.md`.
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is

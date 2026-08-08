@@ -8,10 +8,10 @@ they were and were not checked against.
 
 The original design called for fitting regen_cost against the Azure LLM Inference Trace
 and half_life against update-frequency patterns observed in a public news or
-product-catalog corpus. Neither dataset was reachable in this environment:
-there is no network access to download the Azure trace or a news/catalog corpus, and
-neither is bundled with the repository. Fitting against data that was never actually
-obtained would misrepresent the calibration, so this document does not claim that fit.
+product-catalog corpus. Neither dataset was obtained: neither is bundled with the
+repository, and no retrieval of either is recorded anywhere in this project. Fitting
+against data that was never actually obtained would misrepresent the calibration, so
+this document does not claim that fit.
 
 What was done instead: both distributions were parameterized from commonly cited public
 figures for the quantities involved, and the generator's output is compared against a

@@ -1,11 +1,12 @@
-"""Figure 1: stale-hit-rate by ablation row, the headline figure.
+"""Figure 2 in the report (label fig:ablation): stale-hit-rate by ablation row,
+the headline figure.
 
-Rows 1-5 from results/ablation/results.csv. Per the plan, the comparison of
-record is row 2 (LFU), not row 1 (LRU): Biton & Friedman's own finding is
-that LRU is a weak baseline on semantic workloads, so grading against it
-would flatter every other row trivially. (A sixth row, FreCoS without the
-size-normalization term, was dropped after that term was removed from Eq. 1
-entirely - see gptcache_ext/eviction/frecos.py's module docstring.)
+Rows 1-5 from results/ablation/results.csv. The comparison of record is row 2
+(LFU), not row 1 (LRU): Biton & Friedman's own finding is that LRU is a weak
+baseline on semantic workloads, so grading against it would flatter every other
+row trivially. There is no size-normalization ablation row because Eq. 1 has no
+size-normalization term to ablate - see gptcache_ext/eviction/frecos.py's module
+docstring.
 """
 from common import load_csv, group_values, bootstrap_median_ci, new_figure, save_figure, REPO_ROOT
 
@@ -37,7 +38,9 @@ def main():
         los.append(med - lo)
         his.append(hi - med)
 
-    fig, ax = new_figure()
+    # Taller than the default: the rotated row labels eat enough of the axes that the
+    # y-axis label does not fit beside them at FIG_HEIGHT, and overflows the canvas.
+    fig, ax = new_figure(height=3.2)
     x = range(len(ROW_ORDER))
     colors = ["#888888" if k != FLOOR_ROW else "#c0392b" for k in ROW_ORDER]
     ax.bar(x, medians, yerr=[los, his], capsize=4, color=colors)

@@ -1,8 +1,13 @@
 [flake8]
 max-line-length = 100
 exclude = vendor
-# contracts.py is copied verbatim from the plan and is frozen; its
-# hand-aligned formatting is intentional and not to be reflowed.
+# contracts.py declares the shared EntryMeta/ClusterStaleness field set with names, types
+# and per-field unit-and-invariant comments column-aligned, so the units of one field and
+# the rules for reading it line up down the block instead of hiding at line ends of
+# different lengths. E221 (multiple spaces before operator) is the alignment itself, and
+# E301/E302 allow the single-blank-line spacing that keeps each dataclass and Protocol
+# readable as one block. Reflowing the file would cost that alignment and change nothing
+# else.
 per-file-ignores =
     gptcache_ext/contracts.py:E221,E301,E302
     # Hand-labeled case data with long free-text justification strings.

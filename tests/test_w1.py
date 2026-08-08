@@ -150,15 +150,36 @@ def test_valid_until_after_t(trace):
         assert row["valid_until"] >= row["t"] or math.isinf(row["valid_until"])
 
 
+# Bounds for the cluster-separability guard below. Chance level for the adjusted Rand
+# index is 0 by construction, and the regression this guard exists to catch - a canonical
+# template a general-purpose embedder cannot separate by cluster - measured ARI 0.02-0.06.
+# The floor is set from that failure regime rather than from whatever the current template
+# happens to score: 0.2 sits above the whole of it (3x its top end, 10x its bottom) and
+# roughly 2x below the weakest of the five evaluation seeds, so it separates "the embedder
+# recovers cluster identity" from "it does not" with margin on both sides. The ceiling
+# pins the other half of what results/ is reported under: clustering here is substantial
+# but imperfect, which is what makes same-cluster false hits a first-order caveat rather
+# than a rounding error.
+CLUSTER_ARI_FLOOR = 0.2
+CLUSTER_ARI_CEILING = 0.9
+
+
 def test_canonical_query_text_is_cluster_separable_under_a_real_embedder():
-    """Regression test for the exact bug this generator once had: the canonical query
-    template used to differ across clusters only in two embedded numbers
-    ("topic {cluster_id}-{answer_id}"), which a general-purpose sentence embedder
-    cannot use to recover cluster identity (adjusted Rand index 0.02-0.06, at
-    random-assignment level, see CHANGES.md). This asserts the real embedder-based
-    clustering pipeline now clears 0.5 -- not just that the template text differs
-    string-wise, which the mostly-shared "What is the current status of ... for ...?"
-    prefix would pass trivially even under the old bug.
+    """Asserts the real embedder-based clustering pipeline recovers cluster identity from
+    canonical query text well above chance and well short of perfectly.
+
+    The check runs the actual embedder rather than comparing template strings, because a
+    template can differ across clusters and still carry no signal an embedder can use: a
+    template differing only in embedded numbers ("topic {cluster_id}-{answer_id}") scores
+    ARI 0.02-0.06, indistinguishable from random assignment. A string-difference assertion
+    would pass on such a template trivially, since the "What is the current status of ...
+    for ...?" prefix is shared across clusters either way.
+
+    Seed 0 is one of the five evaluation seeds every experiment under results/ runs, so
+    this is an in-sample check on the template, not a held-out measurement. Those five
+    seeds score 0.5229, 0.4194, 0.4535, 0.4089 and 0.3946 at this scale (median 0.42, the
+    figure the report quotes), and the bounds hold for every one of them, not for seed 0
+    alone.
 
     Downloads GPTCache's default ONNX embedder on first run (network required,
     cached afterward under /tmp so CI's own run and this test never redownload against
@@ -171,8 +192,15 @@ def test_canonical_query_text_is_cluster_separable_under_a_real_embedder():
     embedder = CachedEmbedder("/tmp/frecos_test_embedding_cache")
     trace = generate_trace(n_tenants=5, n_clusters=10, n_queries=3000, seed=0)
     ari = assign_real_clusters(trace, embedder, n_clusters=10, seed=0)
-    assert ari > 0.5, (
-        f"cluster_ari={ari:.4f} is at or below the random-assignment level this test "
-        f"guards against; the canonical query template may have regressed to text a "
-        f"real embedder cannot separate by cluster"
+    assert ari > CLUSTER_ARI_FLOOR, (
+        f"cluster_ari={ari:.4f} is at or below {CLUSTER_ARI_FLOOR}, the floor between a "
+        f"template a real embedder can separate by cluster and one it cannot (chance level "
+        f"is 0, and the numeric-only template this guards against scored 0.02-0.06); the "
+        f"canonical query template may have regressed toward text carrying no cluster signal"
+    )
+    assert ari < CLUSTER_ARI_CEILING, (
+        f"cluster_ari={ari:.4f} is at or above {CLUSTER_ARI_CEILING}: the canonical query "
+        f"template now separates clusters almost perfectly, so the substantial-but-"
+        f"imperfect clustering every result under results/ is reported under, and the "
+        f"same-cluster false-hit caveat that goes with it, no longer describe this workload"
     )

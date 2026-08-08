@@ -2,19 +2,18 @@
 exponentials (one fifth of the mean scale, 1.8 times the mean scale) rather than a single
 exponential.
 
-brackets_misspecified.py tried a Weibull half-life first, but a Weibull with shape 2 has
-roughly half the coefficient of variation of the exponential it replaces, so that run made
-the workload's staleness easier to predict, not harder, and every arm's stale-hit-rate
-improved. This script is the adversarial case: a single exponential rate fit by maximum
-likelihood is systematically biased for both the fast and the slow subpopulation within
-one cluster, since no single rate is correct for either half of the mixture.
+brackets_misspecified.py's Weibull half-life is the milder misspecification: a Weibull with
+shape 2 has roughly half the coefficient of variation of the exponential it replaces, so it
+makes the workload's staleness easier to predict, not harder, and every arm's
+stale-hit-rate improves. This script is the adversarial case: a single exponential rate fit
+by maximum likelihood is systematically biased for both the fast and the slow subpopulation
+within one cluster, since no single rate is correct for either half of the mixture.
 
 Design is otherwise identical to brackets.py and brackets_misspecified.py: same trace
-scale, same cache size, same three lambda_source values, five seeds each (reduced-scale
-rerun, see brackets.py's docstring). oracle_lambdas still uses 1/half_life_scale, since
-the mixture's overall mean equals the plain exponential's, and that mean rate is the
-best a single-rate oracle table can encode; the mixture's bimodal shape has no
-equivalent slot in this project's staleness table either.
+scale, same cache size, same three lambda_source values, five seeds each. oracle_lambdas
+still uses 1/half_life_scale, since the mixture's overall mean equals the plain
+exponential's, and that mean rate is the best a single-rate oracle table can encode; the
+mixture's bimodal shape has no equivalent slot in this project's staleness table either.
 """
 import os
 

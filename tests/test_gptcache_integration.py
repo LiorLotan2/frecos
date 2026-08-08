@@ -3,11 +3,10 @@ SSDataManager (not a stub), confirms the eviction path is genuinely wired throug
 GPTCache's own EvictionBase.get() factory, and asserts the victim it picks matches
 FreCoSEviction.select_victim() computed directly on the same metadata.
 
-Modeled on tests/test_stock_parity.py, which already builds a real gptcache.Cache
-successfully; this test goes one step further into SSDataManager (rather than
-MapDataManager) because MapDataManager never calls EvictionBase at all -- it manages
-its own cachetools LRU internally, so it would not exercise register() or the
-monkeypatched factory.
+Like tests/test_stock_parity.py it drives a real gptcache.Cache, but through SSDataManager
+rather than MapDataManager, because MapDataManager never calls EvictionBase at all -- it
+manages its own cachetools LRU internally, so it would exercise neither register() nor the
+patched factory.
 """
 import time
 from typing import List, Optional

@@ -1,22 +1,22 @@
 """Parameter sweeps: cache size, TTL confidence, cluster count K.
 
 Design: three axes, one at a time, no full factorial. Full stack throughout (gate on,
-FreCoS eviction), 5 seeds per point (reduced-scale rerun, see benchmarks/runners/
-brackets.py's docstring), one fresh trace per seed for the same reason the bracketing
-and ablation experiments generate fresh traces rather than replaying one trace ten
-times -- the pipeline is deterministic given a trace, so a repeated trace would give
-byte-identical "seeds" and nothing to bootstrap over.
+FreCoS eviction), 5 seeds per point at the same trace scale as benchmarks/runners/
+brackets.py, one fresh trace per seed for the same reason the bracketing and ablation
+experiments generate fresh traces rather than replaying one -- the pipeline is
+deterministic given a trace, so a repeated trace would give byte-identical "seeds" and
+nothing to bootstrap over.
 
 Fixed defaults, held constant on the two axes not being swept: cache_size_entries=495
 (30% of the 1650-answer_id working set at n_queries=3000, n_clusters=10), ttl_confidence=
 0.9, cluster_count_k=10. These match the bracketing experiment's calibration choices
-except cache size, which the bracketing experiment put at 412 (25%) as a placeholder
-ahead of this sweep; 495 (30%) is inside the same plausible mid-range and is one of this
-sweep's own cache-size points, so the cache-size axis includes its own default rather
-than defining a fourth value nobody else uses.
+except cache size, which the bracketing experiment fixes at 412 (25%); 495 (30%) is inside
+the same plausible mid-range and is one of this sweep's own cache-size points, so the
+cache-size axis includes its own default rather than defining a fourth value nobody else
+uses.
 
 Cache-size points: 82, 248, 495, 825, 1320 entries, i.e. 5%, 15%, 30%, 50%, 80% of the
-1650-entry working set, following the plan's own suggested spacing exactly.
+1650-entry working set.
 
 Cluster-count-K sweep varies n_clusters at trace generation time (so ground-truth cluster
 structure actually changes) and passes the same k into cluster_count_k in the Config and
