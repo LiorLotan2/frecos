@@ -7,17 +7,40 @@ eviction. It is a course project built on top of a pinned GPTCache fork; see
 
 ## What the experiments found
 
-The validity gate works, at a price. On the synthetic W1 workload it cuts stale-hit-rate
-from 0.546 to 0.068, an 8.07-fold reduction with perfect separation across 5 seeds, and
-per-cluster learned rates beat a single pooled rate. The cost is large: hit rate drops
-from 0.894 to 0.336, mean latency rises from 15.64 to 95.55 ms, throughput falls from
-63.96 to 10.47 queries/s, and spend rises 6.45x for a 1.52x rise in cost saved that is
-not significant at 5 seeds.
+The validity gate works on the metric it targets. On the synthetic W1 workload it cuts
+stale-hit-rate from 0.546 to 0.068, an 8.07-fold reduction with perfect separation across
+5 seeds, and per-cluster learned rates beat a single pooled rate.
 
-The eviction decay term does not work. In the one experiment where the value function
-actually selects victims (a 25-entry budget), FreCoS is indistinguishable from plain LFU
-on cost saved, and plain LRU beats it on both cost saved and stale-hit-rate, because
-creation age tracks access recency on this trace. That is reported as a negative result.
+## The tradeoffs, and which of them are real
+
+Turning the gate on moves four numbers the wrong way. Three are less damaging than they
+first look; one is a genuine cost.
+
+Hit rate falls from 0.894 to 0.336, but most of what disappears was wrong to begin with.
+With the gate off, 0.9225 of served hits are false hits. Counted per scored query instead
+of per served hit, useful hits move the other way: 0.0164 to 0.0265, a rise of 61.3%.
+
+Mean latency rises from 15.64 to 95.55 ms and throughput falls from 63.96 to 10.47
+queries/s, but neither is the gate's own cost. Measured extension overhead per decision is
+1.04 ms with the gate off and 0.82 ms with it on, and the per-seed ranges overlap
+(0.79 to 1.39 ms against 0.71 to 1.12 ms). The latency shift comes from the gate turning
+hits into misses, and a miss in this harness pays a simulated placeholder latency far
+larger than any cache-side decision.
+
+Spend is the real cost: 4.317 against 0.669, a 6.45x rise, buying a 1.52x rise in cost
+saved that is not significant at 5 seeds. Refusing a stale hit means paying to regenerate,
+so saved-over-spent drops as the gate gets stricter, from 0.0480 at `ttl_confidence` 0.8
+to 0.0351 at 0.99. This is the shape of the problem rather than an implementation defect.
+`ttl_confidence` is the knob that trades the two sides against each other, and Table
+`tab:ttl` in the report gives the measured frontier.
+
+The fourth is the eviction decay term, and it does not work. In the one experiment where
+the value function actually selects victims (a 25-entry budget), FreCoS is
+indistinguishable from plain LFU on cost saved, and plain LRU beats it on both cost saved
+and stale-hit-rate, because creation age tracks access recency on this trace. That is
+reported as a negative result. The tempting repair, ranking victims by last access rather
+than creation time, is LRU under another name; `tests/test_invariants.py` and
+`tests/test_frecos.py` both fail any implementation that does it.
 
 Every number above is reproducible from the committed CSVs under `results/`; see
 "Reproducing the report" below.
