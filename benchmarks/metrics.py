@@ -83,9 +83,12 @@ def false_hit_rate(rows: Sequence[ServedQuery]) -> float:
 
 
 def cost_saved_usd(rows: Sequence[ServedQuery]) -> float:
-    """Sum of regen_cost over non-stale hits only. A stale hit served a wrong answer,
-    so it saved nothing; counting it here would flatter the metric."""
-    return sum(r.regen_cost for r in rows if is_hit(r) and not is_stale_hit(r))
+    """Sum of regen_cost over useful hits only, i.e. hits that were neither stale nor
+    false. A hit that served an expired answer, or an answer to a different question,
+    saved no backend call the caller would have accepted, so counting it would flatter
+    the metric. An earlier definition excluded only stale hits, which at this workload's
+    false-hit-rate made the number an upper bound rather than a measurement."""
+    return sum(r.regen_cost for r in rows if is_useful_hit(r))
 
 
 def cost_spent_usd(rows: Sequence[ServedQuery]) -> float:

@@ -57,8 +57,9 @@ cache's own encoder, so both consumers see only signals a deployed system would 
 a seeded synthetic workload with per-cluster content half-lives, the gate cuts
 stale-hit-rate roughly eightfold against a frequency-based floor, and fitting a rate per
 cluster beats pooling across clusters with a large, significant effect while staying
-measurably short of an oracle that reads the true rates. Under real eviction pressure the
-cost term beats a pure-frequency policy on cost saved. False-hit-rate, which the semantic
+measurably short of an oracle that reads the true rates. The cost-aware eviction term does
+not hold up: under real eviction pressure it is indistinguishable from a pure-frequency
+policy, and plain LRU beats both. False-hit-rate, which the semantic
 index makes measurable and which is reported beside every result, stays near 0.90 and is
 the dominant limit on absolute numbers here, though not on relative comparisons.
 \end{abstract}
@@ -104,9 +105,9 @@ and the eviction term see only what a deployed cache would see. The second is ev
 that per-cluster staleness fitting does measurable work: learned rates beat a pooled rate
 with a large, significant effect, and stay significantly short of an oracle that reads the
 generator's true rates. That is the pattern a fitter working off an imperfect but real
-signal should produce. The third is a cost-aware eviction result measured under real
-eviction pressure, where FreCoS's cost term beats a pure-frequency floor with a
-large effect, while an insertion-order baseline beats both for a reason
+signal should produce. The third is a negative result on cost-aware eviction, measured
+under real eviction pressure: FreCoS's cost term is indistinguishable from a
+pure-frequency floor, and plain LRU beats both, for a reason
 Section~\ref{ssec:costaware} traces to the workload rather than to any staleness
 mechanism.
 
@@ -315,7 +316,7 @@ The harness is a pure trace replayer; no language model is ever called. On a mis
 response content and cost are whatever the trace recorded, and miss latency is drawn from
 a seeded log-normal scaled by entry size, deterministic per query. That distribution is a
 documented placeholder, not fit to a real trace. Hit latency and extension overhead (index lookup
-plus gate check) are measured for real: 0.348\,ms per decision
+plus gate check) are measured for real: about 1\,ms per decision
 (Table~\ref{tab:latency}), dominated by the cosine search rather than the gate. Reported
 latency is therefore a hybrid of measured and simulated cost: the right trade for keeping
 runs free and deterministic, but a real limitation.
@@ -329,12 +330,6 @@ Renaissance art, say) score 0.7--0.8 cosine similarity, close enough to the matc
 threshold to cross it, because to a general-purpose embedder they are related text. This is a recognizable failure mode for a real semantic cache rather than a
 workload artifact, but it does mean every hit-rate number below should be read alongside
 its false-hit-rate.
-
-One simplification in the harness's index changes what a baseline label means: the index
-does not update \texttt{last\_access} when an entry is
-hit, so the LRU baseline in fact evicts in insertion order. I report that row as
-insertion-order eviction throughout; true LRU is untested here, and
-Section~\ref{ssec:costaware} reads its result accordingly.
 
 The cache starts empty in every run, and the first 10\% of the evaluation split warms it
 and is excluded from every metric.
@@ -352,11 +347,10 @@ $(n_\text{hits} - n_\text{stale} - n_\text{false}) / n_\text{hits}$, because
 both hold of the same hit: the subtraction double-counts the overlap and goes negative
 once both rates are large.
 
-Cost saved sums regeneration cost over non-stale hits only, and does \emph{not} also
-exclude false hits. At this workload's false-hit-rate the reported cost-saved numbers are
-therefore dominated by hits that returned the wrong answer, and
-\texttt{cost\_saved\_usd} should be read as an upper bound, not as money saved by correct
-answers. Adjusted Rand index (\texttt{cluster\_ari}) measures how well the learned
+Cost saved sums regeneration cost over useful hits only: a hit that returned an expired
+answer, or an answer to a different question, saved no backend call the caller would have
+accepted. Given how high false-hit-rate runs here, that exclusion matters, and it is what
+keeps \texttt{cost\_saved\_usd} a measurement rather than an upper bound. Adjusted Rand index (\texttt{cluster\_ari}) measures how well the learned
 assignment matches the true labels: 1.0 is a perfect match, 0.0 is what random assignment
 gives in expectation.
 
@@ -411,9 +405,9 @@ scored queries is 678/635/661 for global/learned/oracle; see
 \toprule
 Lambda source & Stale-hit-rate & 95\% CI & Cost saved & cluster\_ari & False-hit-rate \\
 \midrule
-Global & 0.091 & (0.085, 0.155) & 1.99 & 0.419 & 0.898 \\
-Learned & 0.068 & (0.051, 0.087) & 1.84 & 0.419 & 0.911 \\
-Oracle & 0.048 & (0.042, 0.053) & 1.92 & 0.419 & 0.914 \\
+Global & 0.091 & (0.085, 0.155) & 0.188 & 0.419 & 0.898 \\
+Learned & 0.068 & (0.051, 0.087) & 0.191 & 0.419 & 0.911 \\
+Oracle & 0.048 & (0.042, 0.053) & 0.187 & 0.419 & 0.914 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -459,12 +453,12 @@ $p\approx0.028$, $r\approx0.84$.}
 \toprule
 Check & Lambda source & Median stale-hit-rate & Median cost saved (USD) & cluster\_ari \\
 \midrule
-Weibull & Global & 0.033 & 2.12 & 0.419 \\
-Weibull & Learned & 0.024 & 1.93 & 0.419 \\
-Weibull & Oracle & 0.003 & 1.92 & 0.419 \\
-Mixture & Global & 0.189 & 1.99 & 0.395 \\
-Mixture & Learned & 0.154 & 1.97 & 0.395 \\
-Mixture & Oracle & 0.119 & 1.95 & 0.395 \\
+Weibull & Global & 0.033 & 0.173 & 0.419 \\
+Weibull & Learned & 0.024 & 0.177 & 0.419 \\
+Weibull & Oracle & 0.003 & 0.173 & 0.419 \\
+Mixture & Global & 0.189 & 0.232 & 0.395 \\
+Mixture & Learned & 0.154 & 0.238 & 0.395 \\
+Mixture & Oracle & 0.119 & 0.244 & 0.395 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -490,9 +484,9 @@ between global and oracle at both scales.}
 \label{sec:ablation}
 
 I ran five configurations for 5 seeds each at $c=0.90$: three gate-disabled eviction
-policies (insertion-order, LFU, and a documented substitute for Biton and Friedman's
+policies (LRU, LFU, and a documented substitute for Biton and Friedman's
 released policy), then the validity gate combined with plain LFU and with full FreCoS
-eviction. LFU, not insertion-order, is the floor of comparison, following Biton and
+eviction. LFU, not LRU, is the floor of comparison, following Biton and
 Friedman's finding that LRU-class policies underperform on semantic workloads.
 
 \begin{table}[H]
@@ -506,7 +500,7 @@ are traced to real causes below.}
 \toprule
 Row & Configuration & Stale-hit-rate & Hit rate & False-hit-rate \\
 \midrule
-1 & Insertion-order, gate off & 0.546 & 0.894 & 0.923 \\
+1 & LRU, gate off & 0.546 & 0.894 & 0.923 \\
 2 & LFU, gate off (floor) & 0.546 & 0.894 & 0.923 \\
 3 & B\&F substitute, gate off & 0.546 & 0.894 & 0.923 \\
 4 & LFU, gate on & 0.068 & 0.336 & 0.911 \\
@@ -545,26 +539,29 @@ quantities.}
 \toprule
 Metric & Row 2 (floor) & Row 5 (full stack) \\
 \midrule
-Extension overhead per decision (ms), measured & 0.348 & 0.348 \\
-Latency, mean (ms), simulation-dominated & 14.76 & 95.05 \\
-Latency, p95 (ms), simulation-dominated & 123.41 & 279.93 \\
-Latency, p99 (ms), simulation-dominated & 266.91 & 418.75 \\
-Throughput (queries/s), simulation-dominated & 67.7 & 10.5 \\
-Peak RSS (MB) & 206.1 & 206.1 \\
-CPU (\%), measured & 91.9 & 91.5 \\
+Extension overhead per decision (ms), measured & 1.04 & 0.82 \\
+Latency, mean (ms), simulation-dominated & 15.64 & 95.55 \\
+Latency, p95 (ms), simulation-dominated & 124.40 & 280.50 \\
+Latency, p99 (ms), simulation-dominated & 267.25 & 419.42 \\
+Throughput (queries/s), simulation-dominated & 64.0 & 10.5 \\
+Peak RSS (MB), sampled & 179.3 & 183.7 \\
+CPU (\%), measured & 61.3 & 72.8 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Peak RSS is identical between rows, which is unsurprising given both run through the same
-real index on a shared machine. The mean-latency gap (15\,ms to 95\,ms) is large because
+Peak RSS lands in the same place in both rows (per-seed 178--183\,MB at the floor,
+175--194\,MB for the full stack), which is unsurprising given both run through the same
+real index on a shared machine. Extension overhead differs between the two rows in the
+table, but the per-seed ranges overlap (0.79--1.39\,ms at the floor, 0.71--1.12\,ms for
+the full stack), so that difference is run-to-run variation on a shared machine, not an
+effect of the gate. The mean-latency gap (16\,ms to 96\,ms) is large because
 the gate converts a large fraction of hits into misses at this hit rate, and a simulated
 miss costs far more than a real cache-side decision. The gap is still
 simulation-dominated, not a claim about real end-to-end latency. I report no latency CDF, though the guideline asks
 for one, for the same reason: its shape would be the shape of a random-number generator,
-not of any real system. The one measured latency quantity, extension overhead, does not
-vary enough across five seeds for a distribution plot to add anything to the number
-above.
+not of any real system. For the one measured latency quantity, extension overhead, the
+seed-to-seed spread is the range quoted above.
 
 \begin{figure}[H]
 \centering
@@ -582,44 +579,55 @@ before eviction ever sees them, or at a cache size where eviction never fires. N
 gives FreCoS's cost and decay terms anything to differentiate on. This experiment turns
 the gate off and runs three eviction policies for 5 seeds each at a 25-entry cache, scaled
 down from the 412 entries the ablation uses in proportion to the smaller trace so that the
-cache reliably fills. It does: over 1{,}400 misses occur per run out of 1890 scored
+cache reliably fills. It does: 1{,}325--1{,}515 misses occur per run out of 1890 scored
 queries, against 178--210 in the gate-off ablation rows. That is real eviction pressure.
 
 \begin{table}[H]
 \centering
-\caption{With real eviction pressure, FreCoS beats the LFU floor on cost saved with a
-large effect, though not independently significant at $n=5$. Insertion-order eviction
-beats both on cost saved and has by far the lowest stale-hit-rate.}
+\caption{With real eviction pressure, FreCoS's cost term is indistinguishable from the LFU
+floor on cost saved, and LRU beats both on cost saved and on stale-hit-rate. Cost saved
+counts useful hits only (Section~\ref{ssec:stats}), which is why the absolute values are
+small.}
 \label{tab:costaware}
 \begin{tabular}{lccc}
 \toprule
 Policy & Median cost saved (USD) & 95\% CI & Median stale-hit-rate \\
 \midrule
-FreCoS & 1.22 & (0.86, 2.21) & 0.420 \\
-LFU & 0.70 & (0.54, 1.46) & 0.526 \\
-Insertion-order & 1.60 & (1.11, 2.62) & 0.063 \\
+FreCoS & 0.138 & (0.084, 0.234) & 0.420 \\
+LFU & 0.120 & (0.075, 0.216) & 0.526 \\
+LRU & 0.213 & (0.133, 0.365) & 0.092 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-FreCoS versus LFU on cost saved: $U_a=21.0$, $p\approx0.076$, $r\approx0.68$. FreCoS is
-higher, with a large effect, not significant at $n=5$. This is the first experiment in which
-FreCoS's cost term shows real, directionally consistent work, and it is the result the
-gate-on ablation structurally could not surface.
+FreCoS versus LFU on cost saved: $U_a=13.0$, $p\approx0.917$, $r\approx0.04$. That is no
+effect at all. The two medians sit well inside each other's confidence intervals and the
+per-seed values interleave. This experiment was built to be the eviction term's best case,
+the one setting where the cost and decay factors in Equation~\ref{eq:value} have something
+to differentiate on, and under that setting they do not separate from a plain frequency
+count.
 
-Insertion-order eviction, however, beats FreCoS on cost saved ($U_a=7.0$, $p\approx0.251$,
-$r\approx-0.44$, medium effect) and is strictly lower on stale-hit-rate ($U_a=25.0$,
-$p\approx0.0090$, $r\approx1.00$, perfect separation). The mechanism has nothing to do with staleness
-modeling: with no gate active, evicting the oldest-created entry is very nearly a
-definition of evicting the entry most likely to have expired. Insertion-order eviction
-gets that freshness benefit for free, without a staleness model, a calibration split or a
-gate, which challenges this project's premise on any workload where write age and eviction
-order line up this well. What holds
-up is narrower than the premise but real: FreCoS beats the pure-frequency floor on cost
-saved with a large effect. It does not beat insertion order, and this report does not
-claim otherwise. Whether true LRU (which this harness does not exercise,
-Section~\ref{ssec:simmodel}) would show the same advantage is untested, and worth testing
-because Biton and Friedman report the opposite for LRU on semantic workloads.
+LRU beats FreCoS on cost saved ($U_a=5.0$, $p\approx0.117$, $r\approx-0.60$, large effect,
+not significant at $n=5$) and is strictly lower on stale-hit-rate ($U_a=25.0$,
+$p\approx0.0090$, $r\approx1.00$, perfect separation). It also separates perfectly from the
+LFU floor on stale-hit-rate ($U_a=0.0$, $p\approx0.0090$, $r\approx-1.00$).
+Useful-hit-rate follows the same ordering (0.123 for LRU, 0.087 for LFU, 0.077 for
+FreCoS), which is what the cost column is measuring, since cost saved now sums
+regeneration cost over useful hits only. The mechanism has nothing to do with staleness
+modeling. Under a 25-entry budget with no gate active, the LRU resident set is close to
+the 25 most recently touched entries, and since every miss inserts a freshly created
+entry, an entry that survives under LRU is usually one created recently. Evicting the
+least recently used entry is therefore very nearly evicting the entry most likely to have
+expired, and LRU gets that for free: no staleness model, no calibration split, no gate.
+
+I report this as a negative result. FreCoS's cost term buys nothing measurable over LFU
+here, and both lose to the cheapest policy in the comparison. Biton and Friedman report
+LRU-class policies underperforming on semantic workloads, which is why LFU is the floor
+everywhere else in this report; on this trace the opposite holds. The reason is a property
+of the trace rather than of the value function: creation age and access recency line up
+closely enough that recency alone approximates freshness. Separating the value function
+from recency needs a workload where those two orderings come apart, which W1 does not
+provide.
 
 \subsection{Cache size and the correctness-efficiency trade-off}
 \label{ssec:sweeps}
@@ -711,12 +719,12 @@ exercised at all, and a suite can report a clean-looking null result that measur
 (Section~\ref{ssec:simmodel}). Any future work extending this to a real corpus should
 verify \texttt{cluster\_ari} before trusting any per-cluster result.
 
-Cost-aware eviction is the weakest. FreCoS's cost term does beat the pure-frequency floor
-with a large effect under real eviction pressure, which counts as a positive result. But
-insertion-order eviction beats FreCoS on both metrics tested, for a reason that has
-nothing to do with modeling staleness and everything to do with write age correlating with
-eviction order on this trace. On workloads with that structure, a policy with no staleness
-model at all is hard to beat.
+Cost-aware eviction is the weakest, and it fails. Tested under real eviction pressure, in
+the setting designed to give it every advantage, FreCoS's cost term is indistinguishable
+from the pure-frequency floor, and plain LRU beats both on cost saved and on
+stale-hit-rate. The reason has nothing to do with modeling staleness and everything to do
+with access recency tracking creation age on this trace. On workloads with that structure,
+a policy with no staleness model at all is hard to beat.
 
 Two limitations cut across everything above. First, false-hit-rate near 0.90: the semantic
 index matches same-topic, different-aspect queries at 0.7--0.8 cosine similarity, close
@@ -736,7 +744,7 @@ measured only against count-based policies and FreCoS itself.
 Finally, scale: 3{,}000 queries and 5 seeds per configuration, chosen because embedding
 dominates runtime and the conclusions here do not depend on trace size. The cost is
 statistical power: several comparisons show a large effect and a consistent direction
-without clearing $p<0.05$ at $n=5$ (FreCoS vs.\ LFU on cost saved, most notably). Every
+without clearing $p<0.05$ at $n=5$ (LRU vs.\ FreCoS on cost saved, most notably). Every
 such case is reported with its effect size next to the non-significant $p$-value rather
 than as a null result.
 
@@ -747,20 +755,17 @@ build a system that closes it, with two components matching the two gaps in
 Section~1.1. The validity gate does the job: an 8-fold cut in stale-hit-rate with perfect
 separation, robust to clustering error. The per-cluster learning that sharpens it holds up
 as well, beating pooling with a large, significant effect while staying short of oracle. The
-eviction term's cost-awareness beats a pure-frequency floor once tested under real
-eviction pressure, but loses to insertion-order eviction on this trace for reasons
-unrelated to staleness modeling.
+eviction term does not: tested under real eviction pressure, its cost-awareness is
+indistinguishable from a pure-frequency floor, and plain LRU beats both on this trace for
+reasons unrelated to staleness modeling.
 
 The most consequential next step is the false-hit-rate gap: same-topic,
 different-aspect queries still land close to the index's match threshold, so a more
 semantically distant aspect vocabulary, or a real corpus in place of a synthetic template,
 would likely reduce false-hit-rate without touching the clustering pipeline.
-Excluding false hits from \texttt{cost\_saved\_usd} is a prepared, straightforward metric
-change, deferred here only because it would invalidate every committed
-\texttt{results.csv}; the metric carries an explicit caveat in the meantime. Making the
-harness update \texttt{last\_access} on a hit would let the same suite test true LRU
-rather than insertion order, which matters given how strong the insertion-order baseline
-turned out to be. Beyond that: running Biton and Friedman's policy and Cortex's LCFU
+The eviction result points somewhere specific too: building a workload whose creation-age
+and access-recency orderings disagree, so the value function has something to supply that
+recency does not already. Beyond that: running Biton and Friedman's policy and Cortex's LCFU
 directly, now that a real index exists to run them against; calibrating the generator
 against a real inference trace; and breaking the circularity between stale-hit-rate and
 its generator-supplied ground truth, which would be the single strongest improvement

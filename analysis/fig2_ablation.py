@@ -37,7 +37,9 @@ def main():
         los.append(med - lo)
         his.append(hi - med)
 
-    fig, ax = new_figure()
+    # Taller than the default: the rotated row labels eat enough of the axes that the
+    # y-axis label no longer fits beside it at FIG_HEIGHT, and overflows the canvas.
+    fig, ax = new_figure(height=3.2)
     x = range(len(ROW_ORDER))
     colors = ["#888888" if k != FLOOR_ROW else "#c0392b" for k in ROW_ORDER]
     ax.bar(x, medians, yerr=[los, his], capsize=4, color=colors)

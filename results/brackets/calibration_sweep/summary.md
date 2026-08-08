@@ -34,9 +34,9 @@ stdlib random, seeded 12345.
 
 | lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
 |---|---|---|---|---|---|
-| global | 0.1096 | (0.0833, 0.1483) | 1.25 | 0.407 | 0.904 |
-| learned | 0.0623 | (0.0446, 0.0955) | 1.20 | 0.407 | 0.895 |
-| oracle | 0.0410 | (0.0284, 0.0578) | 1.22 | 0.407 | 0.907 |
+| global | 0.1096 | (0.0833, 0.1483) | 0.103 | 0.407 | 0.904 |
+| learned | 0.0623 | (0.0446, 0.0955) | 0.119 | 0.407 | 0.895 |
+| oracle | 0.0410 | (0.0284, 0.0578) | 0.121 | 0.407 | 0.907 |
 
 Mann-Whitney U, stale_hit_rate:
 

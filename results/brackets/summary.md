@@ -94,9 +94,9 @@ analysis/stats.py's module docstring.
 
 | lambda_source | median stale_hit_rate | 95% CI | median false_hit_rate | median cost_saved_usd | median cluster_ari |
 |---|---|---|---|---|---|
-| global | 0.0911 | (0.0847, 0.1553) | 0.898 | 1.99 | 0.419 |
-| learned | 0.0677 | (0.0505, 0.0874) | 0.911 | 1.84 | 0.419 |
-| oracle | 0.0484 | (0.0420, 0.0529) | 0.914 | 1.92 | 0.419 |
+| global | 0.0911 | (0.0847, 0.1553) | 0.898 | 0.188 | 0.419 |
+| learned | 0.0677 | (0.0505, 0.0874) | 0.911 | 0.191 | 0.419 |
+| oracle | 0.0484 | (0.0420, 0.0529) | 0.914 | 0.187 | 0.419 |
 
 (cluster_ari is identical across lambda_source rows within a seed, since clustering is
 fit once per trace before lambda_source-specific fitting; the median above is over all

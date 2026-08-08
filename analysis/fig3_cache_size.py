@@ -38,12 +38,14 @@ def main():
     knee_size = find_knee(x, med)
     knee_pct = round(100 * knee_size / WORKING_SET_ANSWER_IDS)
 
-    fig, ax = new_figure()
+    fig, ax = new_figure(small=True)
     ax.errorbar(x, med, yerr=[lo, hi], fmt="o-", capsize=4, color="#2c3e50")
     ax.axvline(knee_size, color="#c0392b", linestyle="--", linewidth=1.2)
-    knee_y = med[x.index(knee_size)]
-    ax.annotate(f"knee: {knee_size} entries\n({knee_pct}% of working set)",
-                xy=(knee_size, knee_y), xytext=(knee_size + 250, knee_y - 0.0015),
+    # Axes-fraction placement, not data coordinates: at this figure's rendered width the
+    # long form of this label ran past the right spine and sat on top of the plateau.
+    # The caption carries the full sentence; the annotation only has to mark the line.
+    ax.annotate(f"knee: {knee_size} entries ({knee_pct}%)",
+                xy=(0.30, 0.06), xycoords="axes fraction",
                 fontsize=10, color="#c0392b")
     ax.set_xlabel("cache size (entries)")
     ax.set_ylabel("hit rate (median, 95% CI)")

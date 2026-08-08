@@ -15,8 +15,9 @@ n_hits = 13 (rows 1-13), n_misses = 7 (rows 14-20), n = 20.
 hit_rate = 13/20 = 0.65
 stale hits = rows 9, 10, 13 -> 3. stale_hit_rate = 3/13
 false hits = rows 11, 12, 13 -> 3. false_hit_rate = 3/13
-non-stale hits (cost_saved counts these only) = rows 1-8, 11, 12 -> 10 rows.
-regen_cost is 0.01 on every row, so cost_saved = 10 * 0.01 = 0.10.
+useful hits (cost_saved counts these only, i.e. neither stale nor false) = rows 1-8 ->
+8 rows. regen_cost is 0.01 on every row, so cost_saved = 8 * 0.01 = 0.08. Rows 11-12 are
+fresh but answer the wrong question, so they save nothing the caller would accept.
 cost_spent counts the 7 miss rows: 7 * 0.01 = 0.07.
 useful hits (neither stale nor false) = rows 1-8 only -> 8. useful_hit_rate = 8/13.
 Rows 9-10 are stale (excluded), 11-12 are false (excluded), 13 is both (excluded once,
@@ -111,7 +112,14 @@ def test_useful_hit_rate_does_not_double_subtract_the_stale_and_false_overlap():
 
 
 def test_cost_saved_matches_hand_worked_value():
-    assert abs(cost_saved_usd(build_fixture()) - 0.10) < 1e-9
+    assert abs(cost_saved_usd(build_fixture()) - 0.08) < 1e-9
+
+
+def test_cost_saved_excludes_false_hits_as_well_as_stale_ones():
+    # One fresh hit answering the wrong question: not stale, so a non-stale-only
+    # definition would count its regen_cost. It saved nothing usable.
+    rows = [_hit(1, FRESH_VALID_UNTIL, 99)]
+    assert cost_saved_usd(rows) == 0.0
 
 
 def test_cost_spent_matches_hand_worked_value():

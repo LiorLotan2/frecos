@@ -32,9 +32,9 @@ stdlib random, seeded 12345.
 
 | lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
 |---|---|---|---|---|---|
-| global | 0.0333 | (0.0209, 0.0925) | 2.12 | 0.419 | 0.902 |
-| learned | 0.0239 | (0.0071, 0.0611) | 1.93 | 0.419 | 0.920 |
-| oracle | 0.0031 | (0.0018, 0.0089) | 1.92 | 0.419 | 0.919 |
+| global | 0.0333 | (0.0209, 0.0925) | 0.173 | 0.419 | 0.902 |
+| learned | 0.0239 | (0.0071, 0.0611) | 0.177 | 0.419 | 0.920 |
+| oracle | 0.0031 | (0.0018, 0.0089) | 0.173 | 0.419 | 0.919 |
 
 Mann-Whitney U, stale_hit_rate (analysis/stats.py, rank-biserial r = 2*U_a/(n1*n2)-1):
 

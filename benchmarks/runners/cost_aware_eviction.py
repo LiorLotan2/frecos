@@ -12,11 +12,7 @@ metric it was designed to move (cost_saved_usd, not stale_hit_rate) without a ga
 already doing most of the work in front of it.
 
 Design: W1 eval split, gate disabled (NullGate), three eviction policies (FreCoS, LFU,
-LRU) x 5 seeds each, same trace scale as the main ablation (n_queries=3000). The "LRU"
-policy string is what committed results.csv rows carry, but the harness's index never
-advances last_access, so it selects by insertion time; the report calls this row
-"insertion-order eviction" and reads its result accordingly (see benchmarks/harness.py's
-module docstring). Cache size is 25,
+LRU) x 5 seeds each, same trace scale as the main ablation (n_queries=3000). Cache size is 25,
 not the main ablation's 412: with the gate off and a real semantic index at the 0.8
 threshold, hit rate here is high enough that a 412-entry cache would not reliably fill
 under this reduced trace size, so this cache size is scaled down proportionally

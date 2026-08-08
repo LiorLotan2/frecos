@@ -48,11 +48,11 @@ percentiles. stdlib random, seeded 12345.
 
 | Row | median stale_hit_rate | 95% CI | median hit_rate | median false_hit_rate | median cost_saved_usd |
 |---|---|---|---|---|---|
-| 1 LRU | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 1.90 |
-| 2 LFU | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 1.90 |
-| 3 BF-substitute | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 1.90 |
-| 4 gate+LFU | 0.0677 | (0.0505, 0.0874) | 0.3360 | 0.9111 | 1.84 |
-| 5 gate+FreCoS | 0.0677 | (0.0505, 0.0874) | 0.3360 | 0.9111 | 1.84 |
+| 1 LRU | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 0.126 |
+| 2 LFU | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 0.126 |
+| 3 BF-substitute | 0.5464 | (0.4667, 0.5994) | 0.8942 | 0.9225 | 0.126 |
+| 4 gate+LFU | 0.0677 | (0.0505, 0.0874) | 0.3360 | 0.9111 | 0.191 |
+| 5 gate+FreCoS | 0.0677 | (0.0505, 0.0874) | 0.3360 | 0.9111 | 0.191 |
 
 Rows 1-3 are byte-identical seed by seed, and rows 4-5 are byte-identical seed by seed.
 Both are traced to real, distinct causes, not left as an unexplained coincidence:

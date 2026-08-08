@@ -390,6 +390,86 @@ and diffed), not asserted.
   second from-scratch full-scale timing run on top of the P0 rerun itself. Flagging
   this as unverified rather than silently claiming it is now accurate at either scale.
 
+## Phase 8 — Report polish, then the five known code defects
+
+Two passes on the `phase-8/report-polish` branch. The first rewrote the report for a
+final-version voice (no meta-commentary about earlier drafts, 12 pages including the
+appendix, a general abstract, no section-roadmap paragraph) and stopped labelling the
+harness's gate-off eviction baseline "LRU" when it was really insertion order. The second
+fixed the defects that label was working around, which invalidated the committed numbers
+and forced another rerun.
+
+- **`bump_freq` now advances `last_access`.** `benchmarks/harness.py`'s
+  `ExactMatchIndex.bump_freq` incremented `freq` but left `last_access` at its insertion
+  value, so the LRU policy was really FIFO and the report had to say so. It now sets
+  `last_access = now` and leaves `create_on` alone, which is what the staleness invariant
+  requires (`tests/invariants.py` checks that staleness decisions read creation time and
+  never last-access time). `benchmarks/semantic_index.py` inherits the fixed method. The
+  ablation's rows 1--3 still tie seed by seed, for the reason the report already gives:
+  at a 412-entry budget with 178--210 misses per run, eviction never fires, so no policy
+  is ever called to pick a victim.
+
+- **`peak_rss_mb` is now a real peak.** It was a single `memory_info().rss` reading taken
+  after the replay finished. `_replay` now samples RSS every 100 scored queries
+  (`RSS_SAMPLE_EVERY`) and keeps the maximum, sampling outside the `perf_counter` region
+  around `decide()` so it never lands in the measured overhead. The reported values fell
+  (206.1 MB to 179--184 MB) because the old post-replay reading included allocations the
+  replay itself had already released.
+
+- **`INDEX_THRESHOLD` renamed and documented.** It was named as if it were a semantic
+  similarity threshold, but it is only ever passed alongside `ExactMatchIndex`, whose
+  `search()` returns a fixed match rank or `None`. Renamed to `EXACT_MATCH_THRESHOLD`,
+  with `INDEX_MATCH_RANK` next to it and a comment stating that every runner behind the
+  report passes `benchmarks.embedding_pipeline.SEMANTIC_THRESHOLD` (0.8) explicitly
+  instead.
+
+- **`cost_saved_usd` now excludes false hits, not just stale ones.** The metric change
+  specified in Phase 5 and deferred in Phase 7 is applied: it sums `regen_cost` over
+  `is_useful_hit(r)` rows only. At this workload's ~0.90 false-hit-rate that drops every
+  absolute cost value roughly tenfold, which is the point: the old number was an upper
+  bound, not a measurement. `tests/test_metrics.py` gains
+  `test_cost_saved_excludes_false_hits_as_well_as_stale_ones` and its existing derivation
+  expectation moves 0.10 to 0.08.
+
+- **Figure fonts are legible at the size the report renders them.** `analysis/common.py`
+  used a 7-inch source width for figures typeset into a 3.9-inch or 3.0-inch slot, which
+  scaled 11pt type down to under 5pt on the page. Source dimensions are now chosen so
+  each figure lands near 1:1 at its intended width (`FIG_WIDTH`/`FIG_HEIGHT` for the
+  0.62\textwidth figures, `FIG_WIDTH_SMALL`/`FIG_HEIGHT_SMALL` for the minipage pair),
+  putting displayed labels at about 10.4pt against the report's 11pt body. Three follow-on
+  defects surfaced once the type was large enough to read: fig2's y-axis label overflowed
+  the canvas and rendered as "95% C" (fixed by giving that one figure more height, since
+  its rotated row labels eat into the axes), fig3's knee annotation ran past the right
+  spine and sat on the plateau line (now placed in axes-fraction coordinates and
+  shortened, with the caption carrying the full sentence), and fig4's lower panel was
+  labelled `useful-fraction-of-hits` while the report, the CSV column and
+  `benchmarks/metrics.py` all call it useful-hit-rate (now consistent). Figures were
+  regenerated inside the Linux container, keeping them byte-consistent with what CI's
+  `figures-consistency` job produces.
+
+- **Rerun and renumbered.** Fixes 1 and 4 change committed results, so every experiment
+  behind Section 5 was rerun at the same 3,000 queries and 5 seeds, on the same Python
+  3.13 environment recorded in `results/brackets/env.json`. Reproducibility was checked
+  before trusting the rest: the brackets global seed-0 run reproduced its committed
+  `n_hits` and `stale_hit_rate` exactly, with only `cost_saved_usd` moving. Every
+  stale-hit-rate, hit-rate, false-hit-rate, useful-hit-rate and `cluster_ari` number in
+  the report is unchanged; the cost columns, the latency/resource table, and the
+  cost-aware eviction section are not.
+
+- **The cost-aware eviction result flipped, and the report now says so.** With false hits
+  excluded, FreCoS versus LFU on cost saved goes from `U_a=21.0, p ~ 0.076, r ~ 0.68` to
+  `U_a=13.0, p ~ 0.917, r ~ 0.04`: no effect. Real LRU beats FreCoS on cost saved
+  (`U_a=5.0, p ~ 0.117, r ~ -0.60`) and separates perfectly from it on stale-hit-rate
+  (`U_a=25.0, p ~ 0.009, r ~ 1.00`), and separates perfectly from LFU too
+  (`U_a=0.0, p ~ 0.009, r ~ -1.00`). The abstract, contribution 3, Section 5.3, the
+  Discussion and the Conclusion now report cost-aware eviction as a negative result
+  rather than a narrow win, and trace the mechanism to creation age tracking access
+  recency on this trace.
+
+- **Verified, not asserted:** 96/96 tests pass, `flake8` is clean over `gptcache_ext
+  tests benchmarks analysis workloads`, the report builds with zero overfull hboxes, and
+  the PDF page-tree `/Count` is 12.
+
 ## What was not fixed, and why
 
 - **Seed count:** every experiment in this rerun uses 5 seeds, not the original design's
@@ -397,13 +477,10 @@ and diffed), not asserted.
   cost of a from-scratch embedding-bound rerun at 12,000 queries and 10 seeds is still
   roughly 9 hours; flagged in the report's Discussion and Conclusion as a named
   statistical-power cost, not silently absorbed into the reported numbers.
-- **`cost_saved_usd` still does not exclude false hits.** The metric fix (also exclude
-  `is_false_hit`, not just `is_stale_hit`) remains fully specified (Phase 5) but not
-  applied, since `cost_saved_usd` already carries an explicit false-hit caveat in the
-  report and the change would touch every committed `results.csv` again on top of the
-  P0 rerun this phase already did.
 - **`results/ablation/size_term_isolation/`:** still kept as a historical,
-  no-longer-regenerable artifact, unchanged from Phase 2d.
+  no-longer-regenerable artifact, unchanged from Phase 2d. Its `cost_saved_usd` column
+  predates the Phase 8 metric change and its summary now says so; the conclusion it
+  supports rests on stale-hit-rate and hit-rate, which the change does not touch.
 - **Biton and Friedman's released policy, and Cortex's LCFU:** still not run directly
   against this workload; the eviction axis is still measured only against count-based
   baselines and FreCoS. Listed as future work in the Conclusion.

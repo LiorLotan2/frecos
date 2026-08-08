@@ -40,6 +40,11 @@ resample, 95% CI from the 2.5th/97.5th percentiles. Python stdlib random, seeded
 
 ## Results
 
+The `cost_saved_usd` column below predates the metric change that excludes false hits (see
+results/cost_aware_eviction/summary.md), so it is not comparable with the cost columns in
+the other summaries here. This run is not regenerable, and the conclusion above rests on
+stale_hit_rate and hit_rate, neither of which the metric change touches.
+
 | Row | median stale_hit_rate | 95% CI | median hit_rate | 95% CI | median cost_saved_usd | 95% CI |
 |---|---|---|---|---|---|---|
 | row5 (with size) | 0.0209 | (0.0103, 0.0283) | 0.0130 | (0.0122, 0.0134) | 0.3495 | (0.2754, 0.4483) |

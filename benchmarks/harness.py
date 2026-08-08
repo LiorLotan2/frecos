@@ -20,11 +20,11 @@ threshold) instead, so paraphrase pairs do hit there. Gate, eviction policy, and
 table are supplied by the caller and only need to satisfy the Protocols in
 gptcache_ext.contracts.
 
-Known limitation, stated in the report (Section 4.2): neither index advances last_access on
-a hit, so LRUEviction here selects by insertion time. The report labels that baseline
-"insertion-order eviction" rather than LRU for exactly this reason; true LRU is untested.
-Fixing it is a one-line change to bump_freq below, but it changes every committed
-results.csv row that involves eviction, so it is deferred rather than done silently.
+bump_freq advances last_access as well as freq, so LRUEviction here is real
+least-recently-used and not insertion order. That was not always true: an earlier
+bump_freq preserved last_access, which silently turned every LRU row in this project into
+FIFO. Peak RSS is sampled during the replay rather than read once at each end, so it is a
+real high-water mark over the run.
 """
 import hashlib
 import math
@@ -80,7 +80,14 @@ CSV_COLUMNS = [
 
 WARMUP_FRACTION = 0.1
 INDEX_MATCH_RANK = 1.0
-INDEX_THRESHOLD = 0.5
+# Only ever used with ExactMatchIndex, whose search() returns INDEX_MATCH_RANK on a match
+# and None otherwise, so any value below INDEX_MATCH_RANK behaves identically. It is not a
+# semantic-similarity threshold: every runner behind the report passes
+# benchmarks.embedding_pipeline.SEMANTIC_THRESHOLD (0.8) explicitly instead.
+EXACT_MATCH_THRESHOLD = 0.5
+# How often to sample RSS during a replay, in scored queries. Sampling happens outside the
+# perf_counter region around decide(), so it never lands in the measured overhead.
+RSS_SAMPLE_EVERY = 100
 
 
 def _git_sha() -> str:
@@ -154,14 +161,15 @@ class ExactMatchIndex:
         self._by_text[text] = meta
         return meta
 
-    def bump_freq(self, text: str) -> None:
-        """Increment freq on a hit. Deliberately leaves last_access untouched: see this
-        module's docstring for why LRUEviction consequently behaves as insertion-order
-        eviction throughout, and how the report reports it."""
+    def bump_freq(self, text: str, now: float) -> None:
+        """Record a hit on an entry: increment freq and advance last_access to the serve
+        time. Both are needed, freq for LFU and last_access for LRU. create_on is
+        deliberately left alone, since staleness is a property of when the answer was
+        generated (see tests/invariants.py's create_on-not-last_access check)."""
         meta = self._by_text[text]
         self._by_text[text] = EntryMeta(
             entry_id=meta.entry_id, cluster_id=meta.cluster_id, answer_id=meta.answer_id,
-            create_on=meta.create_on, last_access=meta.last_access,
+            create_on=meta.create_on, last_access=now,
             valid_until=meta.valid_until, freq=meta.freq + 1.0,
             regen_cost=meta.regen_cost, size_bytes=meta.size_bytes,
         )
@@ -197,14 +205,19 @@ def _meta_kwargs_from_row(row: dict, freq: float = 0.0) -> dict:
 
 def _replay(
     trace: Sequence[dict], config, seed: int, gate, eviction_policy, staleness_table,
-    index=None, threshold: float = INDEX_THRESHOLD,
+    index=None, threshold: float = EXACT_MATCH_THRESHOLD, process=None,
 ):
     """Replays the eval split of trace through decide(), applies the 10% warmup cut,
-    and returns the list of scored ServedQuery rows. Runs the invariant checks inline.
+    and returns (scored ServedQuery rows, peak RSS in bytes). Runs the invariant checks
+    inline.
 
     index: an already-constructed Index (e.g. benchmarks.semantic_index.SemanticIndex);
     defaults to a fresh ExactMatchIndex when not supplied, preserving every existing
-    caller's behavior unchanged."""
+    caller's behavior unchanged.
+
+    process: the psutil.Process whose RSS is sampled every RSS_SAMPLE_EVERY queries to
+    build a real high-water mark. Sampling covers the warmup rows too, since the cache
+    fills there."""
     check_no_valid_until_leak()
     # NullGate (gate_enabled=False) is a no-op by design and would fail this
     # regression check trivially, so it only applies when a real staleness gate
@@ -220,7 +233,12 @@ def _replay(
         index = ExactMatchIndex(config.cache_size_entries, eviction_policy)
     scored: List[ServedQuery] = []
 
-    def process(row: dict, record: bool) -> Optional[ServedQuery]:
+    if process is None:
+        process = psutil.Process()
+    peak_rss = process.memory_info().rss
+    n_seen = 0
+
+    def handle(row: dict, record: bool) -> Optional[ServedQuery]:
         start = time.perf_counter()
         decision, meta = decide(
             row["text"], index, threshold=threshold, gate=gate, now=row["t"]
@@ -232,7 +250,7 @@ def _replay(
             # can match a paraphrase to a different cached text, so the two are not
             # interchangeable the way they are under exact-match lookup.
             matched_text = index.text_for_entry_id(meta.entry_id)
-            index.bump_freq(matched_text)
+            index.bump_freq(matched_text, now=row["t"])
             latency_ms = overhead_ms
             served_answer_id = meta.answer_id
             served_valid_until = meta.valid_until
@@ -268,13 +286,21 @@ def _replay(
             overhead_ms=overhead_ms,
         )
 
-    for row in warmup_rows:
-        process(row, record=False)
-    for row in scored_source_rows:
-        result = process(row, record=True)
-        scored.append(result)
+    def sample_rss() -> None:
+        nonlocal peak_rss, n_seen
+        n_seen += 1
+        if n_seen % RSS_SAMPLE_EVERY == 0:
+            peak_rss = max(peak_rss, process.memory_info().rss)
 
-    return scored
+    for row in warmup_rows:
+        handle(row, record=False)
+        sample_rss()
+    for row in scored_source_rows:
+        scored.append(handle(row, record=True))
+        sample_rss()
+
+    peak_rss = max(peak_rss, process.memory_info().rss)
+    return scored, peak_rss
 
 
 def run_harness(
@@ -287,7 +313,7 @@ def run_harness(
     workload: str = "w1",
     run_id: Optional[str] = None,
     index: Any = None,
-    threshold: float = INDEX_THRESHOLD,
+    threshold: float = EXACT_MATCH_THRESHOLD,
     cluster_ari: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Replays trace through the pipeline and returns one plan-sec-2.4 row.
@@ -305,17 +331,15 @@ def run_harness(
         cluster_id directly (recorded as an empty CSV cell, never a placeholder value).
     """
     process = psutil.Process()
-    rss_before = process.memory_info().rss
     process.cpu_percent(interval=None)  # primes the internal counter
 
-    scored = _replay(
+    scored, peak_rss = _replay(
         trace, config, seed, gate, eviction_policy, staleness_table,
-        index=index, threshold=threshold,
+        index=index, threshold=threshold, process=process,
     )
 
     cpu_pct = process.cpu_percent(interval=None)
-    rss_after = process.memory_info().rss
-    peak_rss_mb = max(rss_before, rss_after) / (1024 * 1024)
+    peak_rss_mb = peak_rss / (1024 * 1024)
 
     n_hits = sum(1 for r in scored if r.decision == Decision.HIT)
     n_misses = len(scored) - n_hits
