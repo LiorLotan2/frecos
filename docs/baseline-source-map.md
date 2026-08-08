@@ -51,8 +51,8 @@ def put(self, objs: List[Any]):
         self._cache[obj] = True
 ```
 
-No drift. The `self._cache[obj] = True` line the design doc calls out sits at line 59
-of this pinned version, matching the original claim.
+No drift. The `self._cache[obj] = True` line, which is what makes evicted-entry metadata
+unavailable, sits at line 59 of this pinned version.
 
 ## Claim 4: `create_on`/`last_access` stored but never read
 
@@ -74,8 +74,8 @@ last_access = Column(DateTime, default=datetime.now)
 
 No drift. Note `last_access` is written on cache hit in several storage backends
 (e.g. `sql_storage.py:287-288`, `mongo.py:243-244`) but is never read back into any
-decision logic in `adapter.py` or the eviction policies. The design doc's "never read"
-claim holds for decision logic specifically, not for the column being untouched.
+decision logic in `adapter.py` or the eviction policies. The "never read" claim holds for
+decision logic specifically, not for the column being untouched.
 
 ## Claim 5: no admission control, every miss is inserted
 
@@ -106,6 +106,6 @@ validity. No drift.
 
 ## Summary
 
-All six claims verified against the pinned commit with no line-number drift from the
-design doc. The one clarification added is on claim 4: `last_access` is written by
-storage backends on hit, just never consumed by decision logic.
+All six claims verified against the pinned commit, with no line-number drift. The one
+clarification is on claim 4: `last_access` is written by storage backends on hit, just
+never consumed by decision logic.

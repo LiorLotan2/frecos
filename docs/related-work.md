@@ -14,7 +14,7 @@ as this project's baseline in the first place (see `docs/baseline-justification.
 
 Two findings from the paper directly shape the experiment design here. First, the authors
 show that LRU is a poor eviction policy for most semantic caching workloads and that
-frequency-based policies are strong baselines by comparison — which is why LFU-class
+frequency-based policies are strong baselines by comparison, which is why LFU-class
 policies, not LRU, are treated as the floor for comparison in this project's ablation; an
 improvement measured only against LRU would not be a result. Second, because their
 implementation is released and targets GPTCache, GPTCache is the substrate on which their
@@ -24,8 +24,8 @@ under `results/` exercises their policy.
 
 The delta versus FreCoS: Biton & Friedman's policies combine recency, frequency, and
 locality, all of which are access-pattern signals derived from how a cached entry has been
-queried. FreCoS adds two signals that are orthogonal to access pattern — regeneration cost
-and content validity over time — and evaluates against a correctness metric, stale-hit-rate,
+queried. FreCoS adds two signals that are orthogonal to access pattern, regeneration cost
+and content validity over time, and evaluates against a correctness metric, stale-hit-rate,
 that their setting does not define at all.
 
 ## Cortex (arXiv:2509.17360, September 2025)
@@ -34,7 +34,7 @@ Cited as an arXiv preprint: no peer-reviewed venue for it is corroborated, and t
 bibliography carries it as a preprint accordingly. Cortex's eviction policy, LCFU, scores each
 cache entry as `log(freq+1)·log(cost·10³+1)·log(lat+1)·log(staticity+1)/size`, combined with a
 TTL-based purge. It is multiplicative, cost-aware, frequency-aware, staleness-aware, and size-
-normalized — structurally the closest published eviction formula to FreCoS's value function.
+normalized: structurally the closest published eviction formula to FreCoS's value function.
 
 The delta versus FreCoS is narrow and specific: Cortex's staleness term is a static
 "staticity" score from 1 to 10, assigned by an LLM at write time, combined with a user-defined
@@ -49,8 +49,8 @@ project of its own.
 ## GDSF (Cherkasova & Ciardo, HPCN 2001)
 
 Greedy Dual-Size Frequency scores entries as cost times frequency divided by size, with a
-global-clock aging term. It has no freshness semantics at all — its aging term ages access
-recency, not content validity — so it establishes that cost- and size-aware eviction predates
+global-clock aging term. It has no freshness semantics at all: its aging term ages access
+recency, not content validity, so it establishes that cost- and size-aware eviction predates
 this project by two decades, but it says nothing about staleness. FreCoS's contribution
 relative to GDSF is entirely the staleness axis: the decay term learned from content validity,
 absent from GDSF by construction.
@@ -59,15 +59,15 @@ absent from GDSF by construction.
 
 This work assigns per-category TTLs to cached entries. The TTLs are load-based rather than
 learned from observed staleness, and the work defines no stale-hit-rate metric or equivalent.
-It is also the reason a third planned component of this project — calibrated per-cluster
-similarity thresholds — was cut: that component would have been a lossy special case of
+It is also the reason a third planned component of this project, calibrated per-cluster
+similarity thresholds, was cut: that component would have been a lossy special case of
 vCache's per-embedding threshold learning and is already covered in spirit by Category-Aware's
 per-category treatment, so building and calibrating it would have cost more than it added.
 
 ## FreshCache (arXiv:2607.04281)
 
-A RAG-specific per-tier probabilistic staleness gate. It shares FreCoS's lineage — both put a
-staleness concept in the serve path rather than leaving it entirely to eviction — but the two
+A RAG-specific per-tier probabilistic staleness gate. It shares FreCoS's lineage, since both put a
+staleness concept in the serve path rather than leaving it entirely to eviction, but the two
 differ in kind, not just degree: FreshCache treats staleness as a probabilistic risk budget
 per tier, while FreCoS uses a hard learned gate (serve or refuse) plus a named serving-
 correctness metric, stale-hit-rate, that FreshCache's framing does not produce. FreshCache's
@@ -84,7 +84,7 @@ clustering mechanism, not the eviction or freshness logic built on top of it.
 
 ## MeanCache (arXiv:2403.02694)
 
-Cost-motivated caching work, but eviction is explicitly not its contribution — its focus is
+Cost-motivated caching work, but eviction is explicitly not its contribution: its focus is
 elsewhere in the caching pipeline. Included here for completeness of the cost-aware caching
 literature; it does not compete with FreCoS's eviction value function or staleness gate.
 
@@ -92,7 +92,7 @@ literature; it does not compete with FreCoS's eviction value function or stalene
 
 An admission-control policy, not an eviction policy: it decides whether a new entry is worth
 admitting at all, using a frequency sketch, before eviction is ever invoked. It is explicitly
-out of scope for this project — porting it would be an engineering exercise with no research
-delta on the staleness or cost axes this project is about — and is listed as grounded future
+out of scope for this project, since porting it would be an engineering exercise with no research
+delta on the staleness or cost axes this project is about, and is listed as grounded future
 work rather than a comparator, since adding admission control on top of FreCoS's eviction
 and gate would be a separate axis of improvement, not a replacement for either.

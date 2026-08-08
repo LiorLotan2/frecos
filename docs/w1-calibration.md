@@ -4,21 +4,20 @@ This note documents how the two ground-truth distributions in the W1 synthetic
 generator, regen_cost and half_life, were parameterized, and states plainly what data
 they were and were not checked against.
 
-## What the plan asked for and what was actually done
+## What these distributions are and are not calibrated against
 
-The original design called for fitting regen_cost against the Azure LLM Inference Trace
-and half_life against update-frequency patterns observed in a public news or
-product-catalog corpus. Neither dataset was obtained: neither is bundled with the
-repository, and no retrieval of either is recorded anywhere in this project. Fitting
-against data that was never actually obtained would misrepresent the calibration, so
-this document does not claim that fit.
+The intended references were the Azure LLM Inference Trace for regen_cost and
+update-frequency patterns in a public news or product-catalog corpus for half_life.
+Neither dataset was obtained: neither is bundled with the repository, and no retrieval of
+either is recorded anywhere in this project. Claiming a fit against data that was never
+obtained would misrepresent the calibration, so this document does not claim one.
 
-What was done instead: both distributions were parameterized from commonly cited public
-figures for the quantities involved, and the generator's output is compared against a
-synthetic reference distribution built from those figures. This is a plausibility check,
-not a fit to either named external dataset. The comparison should be read as "does the
-generator's output fall in a plausible range for this kind of workload," not as "does the
-generator reproduce the Azure trace or a news corpus."
+Both distributions are instead parameterized from commonly cited public figures for the
+quantities involved, and the generator's output is compared against a synthetic reference
+distribution built from those figures. That is a plausibility check, not a fit to either
+named external dataset. Read the comparison as "does the generator's output fall in a
+plausible range for this kind of workload," not as "does the generator reproduce the Azure
+trace or a news corpus."
 
 ## regen_cost
 

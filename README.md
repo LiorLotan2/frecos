@@ -13,7 +13,8 @@ eviction. It is a course project built on top of a pinned GPTCache fork; see
   feasibility spike that was not carried forward (see "Reproducing the report" below).
 - `benchmarks/` - the harness, metrics, and experiment runners.
 - `tests/` - unit tests, the reference oracle, and the invariant suite.
-- `docs/` - supporting write-ups (baseline source map, Wikipedia feasibility spike).
+- `docs/` - supporting write-ups (baseline source map, related work, workload
+  calibration, Wikipedia feasibility spike).
 - `report/` - the final report (LaTeX source and compiled PDF).
 - `results/`, `analysis/` - committed experiment output and figure regeneration.
 
@@ -119,14 +120,11 @@ Every runner now also embeds each distinct query text once via the vendored ONNX
 model (cached to disk under `.embedding_cache/`, gitignored, keyed by text hash),
 which dominates first-run wall-clock; a later experiment that reuses trace texts an
 earlier one already embedded is far faster than the numbers below suggest, since it
-hits a warm cache. As of this report's most recent rerun (3,000 queries, 5 seeds per
-experiment, following the generator text fix described in `CHANGES.md` Phase 7), a
-full `make experiments` run with a warm embedding cache took under 30 minutes total on
-the machine recorded in each experiment's `env.json` (Apple M2 Pro, macOS). This was
-not independently re-timed against a fully empty `.embedding_cache/`: the earlier,
-12,000-query/10-seed version of this table reported a ~9-hour cold-cache total, and
-that figure has not been revalidated at the reduced scale this rerun uses -- treat the
-30-minute figure as a warm-cache lower bound, not a cold-start estimate.
+hits a warm cache. At the scale the report uses (3,000 queries, 5 seeds per
+experiment), a full `make experiments` run with a warm embedding cache took under 30
+minutes total on the machine recorded in each experiment's `env.json` (Apple M2 Pro,
+macOS). That figure was not re-timed against a fully empty `.embedding_cache/`, so
+treat it as a warm-cache lower bound rather than a cold-start estimate.
 
 | Command | Output CSV | Report table/figure |
 |---|---|---|
@@ -142,7 +140,7 @@ that figure has not been revalidated at the reduced scale this rerun uses -- tre
 `results/ablation/size_term_isolation/`, has no runner and cannot be regenerated:
 FreCoS's eviction value function carries no size-normalization term to isolate, which
 is itself what that result established. See `gptcache_ext/eviction/frecos.py`'s module
-docstring and `CHANGES.md`.
+docstring and `results/ablation/size_term_isolation/summary.md`.
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is

@@ -1,8 +1,10 @@
 # W2 Wikipedia feasibility spike
 
-**Recommendation: CUT.** Rule-vs-human agreement is 40%, well under the 80% gate. Per
-plan §5 Gate 1, W2 is cut and the project proceeds W1-only. This decision is not
-revisited; the external-validity limitation goes in the report's Discussion section.
+**Recommendation: cut.** A Wikipedia-derived workload (W2) needs an automatic rule that
+decides when a cached answer stopped being correct, and that rule has to agree with human
+judgment before it can serve as staleness ground truth. The bar set in advance was 80%
+agreement. Measured agreement is 40%, so W2 is cut and the evaluation proceeds on W1
+only. The resulting external-validity limitation is stated in the report's Discussion.
 
 ## What was tried
 
@@ -27,7 +29,7 @@ a spike), so nothing downstream depends on the live API.
 
 ## The invalidation rule as implemented
 
-The rule from the plan: **the answer generated from revision r becomes invalid at the
+The rule as specified: **the answer generated from revision r becomes invalid at the
 timestamp of the next revision whose extracted answer sentence differs (as
 plain text) from r's.** Revisions where the extracted sentence is byte-identical do
 not invalidate. This is implemented in `detect_invalidations.py` and applied over the
@@ -66,19 +68,19 @@ those right needs a real wikitext-to-prose renderer (e.g. via the Wikipedia Pars
 API) instead of the regex stripper used here, plus paragraph-alignment across
 revisions instead of first-match sentence lookup.
 
-## Estimated cost to build a working loader
+## What a working loader would still need
 
-Bringing the rule to something closer to 80% agreement would need, at minimum:
-Parsoid-based rendering instead of regex stripping (~4-6h), paragraph-level alignment
-across revisions instead of sentence first-match (~4-6h), re-running and re-labeling
-a fresh hand-labeled sample to confirm the fix generalizes past this spike's 30
-articles (~3h), plus building out the full ≥2,000-query loader with API pagination,
-retries, and the local snapshot cache A6 requires (~6-8h). That is roughly **18-23h**,
-which is under the plan's 25h cap on its own. The reason to still cut is that the 40%
-number measured here is the agreement of the rule as specified in the plan (whole
-sentence, no window, no Parsoid) — the improved version is a different, unvalidated
-rule that would need its own spike to confirm before A6 could build against it, which
-does not fit inside this card's 8-hour timebox.
+Bringing the rule closer to 80% agreement would need, at minimum: Parsoid-based rendering
+instead of regex stripping, paragraph-level alignment across revisions instead of
+sentence first-match, and a fresh hand-labeled sample to confirm the fix generalizes past
+these 30 articles. Only then could a full workload loader be built against it, with API
+pagination, retries and a local snapshot cache.
+
+The reason to cut rather than continue is not the engineering volume. It is that 40% is
+the agreement of the rule as specified (whole sentence, no window, no Parsoid). The
+improved version is a different, unvalidated rule, so it would need its own agreement
+measurement before any workload could rest on it, and that measurement is a second
+study rather than a fix.
 
 ## What ships from this spike
 
@@ -90,16 +92,16 @@ does not fit inside this card's 8-hour timebox.
   trace.
 - `workloads/w2_wikipedia/spike/hand_labels.py`: the 20 hand-labeled cases and the
   agreement check (`python3 hand_labels.py` prints 8/20 = 40%).
-- `workloads/w2_wikipedia/spike/sample.jsonl`: 200 rows, schema-conformant per plan
-  §2.3, built from the rule as specified. Provided per the acceptance criteria even
-  though the underlying rule is not yet reliable enough to gate W2's `valid_until`
-  ground truth in a real experiment; do not use this file's `valid_until` values as
-  ground truth beyond demonstrating the schema is mechanically producible.
+- `workloads/w2_wikipedia/spike/sample.jsonl`: 200 rows in the same trace schema the W1
+  generator emits, built from the rule as specified. It demonstrates that the schema is
+  mechanically producible from real revision history; its `valid_until` values should not
+  be used as ground truth, since the rule behind them agrees with human judgment only 40%
+  of the time.
 
 ## Decision
 
-Agreement (40%) is below the 80% gate. Per Gate 1, W2 is cut. A6 (W2 loader) does not
-run. §5.1 falls back to W1 only; the report's Discussion notes that all staleness
-results come from a self-authored generator, with this spike as evidence that a
-Wikipedia-derived alternative was seriously attempted and found to need more
-engineering than the timebox allowed, not skipped for convenience.
+Agreement of 40% is below the 80% bar, so W2 is cut and no Wikipedia loader was built.
+The evaluation uses W1 only. The report's Discussion states that all staleness results
+therefore come from a self-authored generator, and cites this spike as the measurement
+behind that limitation: a Wikipedia-derived alternative was attempted and found to need a
+more accurate invalidation rule than this one, rather than being skipped untested.
