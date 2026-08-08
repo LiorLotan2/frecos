@@ -67,6 +67,7 @@ the dominant limit on absolute numbers here, though not on relative comparisons.
 \section{Introduction}
 
 \subsection{Motivation}
+\label{ssec:motivation}
 
 A semantic cache sits in front of an expensive backend, usually a large language model
 call, and serves a stored response when an incoming query lands close enough in embedding
@@ -374,8 +375,8 @@ claim two conditions behave alike, raw counts back it up rather than a large $p$
 
 Every experiment ran on the machine recorded in its own \texttt{env.json}: an Apple M2 Pro
 (10 cores), 16\,GB RAM, macOS, Python 3.13. It is a shared development machine, not a
-dedicated benchmarking host, which matters for the peak-RSS figure this report already
-flags as unreliable.
+dedicated benchmarking host. Peak RSS is a sampled maximum taken from a process that
+shares the machine, so read it as an order of magnitude rather than a precise footprint.
 
 \section{Results}
 
@@ -612,7 +613,7 @@ not significant at $n=5$) and is strictly lower on stale-hit-rate ($U_a=25.0$,
 $p\approx0.0090$, $r\approx1.00$, perfect separation). It also separates perfectly from the
 LFU floor on stale-hit-rate ($U_a=0.0$, $p\approx0.0090$, $r\approx-1.00$).
 Useful-hit-rate follows the same ordering (0.123 for LRU, 0.087 for LFU, 0.077 for
-FreCoS), which is what the cost column is measuring, since cost saved now sums
+FreCoS), which is what the cost column is measuring, since cost saved sums
 regeneration cost over useful hits only. The mechanism has nothing to do with staleness
 modeling. Under a 25-entry budget with no gate active, the LRU resident set is close to
 the 25 most recently touched entries, and since every miss inserts a freshly created
@@ -752,7 +753,7 @@ than as a null result.
 
 I set out to name a gap in how semantic caches are evaluated, stale-hit-rate, and to
 build a system that closes it, with two components matching the two gaps in
-Section~1.1. The validity gate does the job: an 8-fold cut in stale-hit-rate with perfect
+Section~\ref{ssec:motivation}. The validity gate does the job: an 8-fold cut in stale-hit-rate with perfect
 separation, robust to clustering error. The per-cluster learning that sharpens it holds up
 as well, beating pooling with a large, significant effect while staying short of oracle. The
 eviction term does not: tested under real eviction pressure, its cost-awareness is
