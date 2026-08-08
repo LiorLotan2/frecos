@@ -5,16 +5,34 @@ staleness model, used both as a validity gate on the serve path and as a decay t
 eviction. It is a course project built on top of a pinned GPTCache fork; see
 `report/report.pdf` for the full write-up (design, experiments, results).
 
+## What the experiments found
+
+The validity gate works, at a price. On the synthetic W1 workload it cuts stale-hit-rate
+from 0.546 to 0.068, an 8.07-fold reduction with perfect separation across 5 seeds, and
+per-cluster learned rates beat a single pooled rate. The cost is large: hit rate drops
+from 0.894 to 0.336, mean latency rises from 15.64 to 95.55 ms, throughput falls from
+63.96 to 10.47 queries/s, and spend rises 6.45x for a 1.52x rise in cost saved that is
+not significant at 5 seeds.
+
+The eviction decay term does not work. In the one experiment where the value function
+actually selects victims (a 25-entry budget), FreCoS is indistinguishable from plain LFU
+on cost saved, and plain LRU beats it on both cost saved and stale-hit-rate, because
+creation age tracks access recency on this trace. That is reported as a negative result.
+
+Every number above is reproducible from the committed CSVs under `results/`; see
+"Reproducing the report" below.
+
 ## Repository layout
 
 - `vendor/gptcache/` - pinned GPTCache source, read-only after import.
 - `gptcache_ext/` - the extension package (pipeline, staleness model, eviction).
 - `workloads/` - the W1 synthetic trace generator; `w2_wikipedia/spike/` holds a
-  feasibility spike that was not carried forward (see "Reproducing the report" below).
+  Wikipedia feasibility spike that was measured and cut (see `docs/w2-feasibility.md`).
 - `benchmarks/` - the harness, metrics, and experiment runners.
 - `tests/` - unit tests, the reference oracle, and the invariant suite.
-- `docs/` - supporting write-ups (baseline source map, related work, workload
-  calibration, Wikipedia feasibility spike).
+- `docs/` - supporting write-ups: baseline choice (`baseline-justification.md`), the
+  claim-by-claim baseline source map, related work, W1 calibration, and the W2
+  feasibility spike.
 - `report/` - the final report (LaTeX source and compiled PDF).
 - `results/`, `analysis/` - committed experiment output and figure regeneration.
 
@@ -115,12 +133,13 @@ Section 5's experiments are separate from the smoke benchmark above. Each experi
 is a runner module under `benchmarks/runners/`, a thin script over `harness.py` that
 writes its results CSV under `results/`. `make experiments` runs all seven in dependency
 order; each also has its own `make exp-*` target if you only want to rerun one.
+`make experiment-smoke` exercises the same runner code path on a tiny trace in seconds,
+which is what CI runs instead of the full set.
 
-Every runner now also embeds each distinct query text once via the vendored ONNX
-model (cached to disk under `.embedding_cache/`, gitignored, keyed by text hash),
-which dominates first-run wall-clock; a later experiment that reuses trace texts an
-earlier one already embedded is far faster than the numbers below suggest, since it
-hits a warm cache. At the scale the report uses (3,000 queries, 5 seeds per
+Each runner embeds every distinct query text once via the vendored ONNX model (cached to
+disk under `.embedding_cache/`, gitignored, keyed by text hash), which dominates first-run
+wall-clock. An experiment that reuses trace texts an earlier one already embedded is far
+faster than a cold run, since it hits a warm cache. At the scale the report uses (3,000 queries, 5 seeds per
 experiment), a full `make experiments` run with a warm embedding cache took under 30
 minutes total on the machine recorded in each experiment's `env.json` (Apple M2 Pro,
 macOS). That figure was not re-timed against a fully empty `.embedding_cache/`, so
@@ -136,7 +155,7 @@ treat it as a warm-cache lower bound rather than a cold-start estimate.
 | `make exp-sweeps` | `results/sweeps/{cache_size,cluster_k,ttl_confidence}/results.csv` | Table `tab:ttl`, Figures `fig:cachesize`, `fig:tradeoff` (cluster_k varies n_clusters, which changes the trace's canonical-query text and so cannot reuse most of the embedding cache the other experiments built) |
 | `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Table `tab:costaware` |
 
-`make experiments` runs all seven sequentially. One committed result set,
+One committed result set,
 `results/ablation/size_term_isolation/`, has no runner and cannot be regenerated:
 FreCoS's eviction value function carries no size-normalization term to isolate, which
 is itself what that result established. See `gptcache_ext/eviction/frecos.py`'s module
@@ -144,8 +163,8 @@ docstring and `results/ablation/size_term_isolation/summary.md`.
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is
-hand-edited), using the exact `matplotlib` version pinned in `requirements.txt` --
-a different version renders pixel-different PNGs even from identical data, which is
+hand-edited), using the exact `matplotlib` version pinned in `requirements.txt`.
+A different version renders pixel-different PNGs even from identical data, which is
 why the CI figures-consistency check installs from `requirements.txt` before
 regenerating. That check is also platform-dependent: even with the pinned
 `matplotlib` version, regenerating on macOS produces PNGs that differ byte-for-byte
@@ -153,16 +172,22 @@ from the Linux-rendered ones committed here (font rasterization differs by platf
 so `figures-consistency` is only verified to pass on the Linux CI runner, not on every
 `make figures` invocation. `analysis/figures/supplementary.csv`, by contrast, does
 reproduce byte-identically on macOS too, since it is plain-text numeric output with
-no font rendering involved -- the stronger reproducibility claim of the two artifacts
-`make figures` produces. `make report` compiles `report/report.tex` to `report/report.pdf` via
+no font rendering involved, making it the stronger reproducibility claim of the two
+artifacts `make figures` produces.
+
+`make multiple-comparisons` prints the Holm-Bonferroni correction the report carries in
+Appendix C: all twelve comparisons with raw and adjusted p, the two pre-registered primary
+comparisons marked exempt, and the ten-member secondary family.
+
+`make report` compiles `report/report.tex` to `report/report.pdf` via
 `tectonic` (not `pdflatex`; installed separately, e.g. `brew install tectonic` or
 see https://tectonic-typesetting.github.io/, not bundled by `make install`).
 
 `make experiments && make figures && make report`, run in that order from a clean
 clone, reproduces every artifact this report cites.
 
-Table in `report/report.tex` Appendix B (`tab:appendix`) maps every artifact used in
-the report to its path in this repository.
+Appendix B of the report (`tab:appendix`) maps the code and data artifacts the report
+cites to their paths in this repository.
 
 ## License
 
