@@ -5,7 +5,7 @@ Design: W1 eval split, five rows crossed with 10 seeds each.
 
 | Row | Gate | Eviction                     | Isolates                          |
 |-----|------|-------------------------------|------------------------------------|
-| 1   | off  | LRU                          | stock GPTCache                     |
+| 1   | off  | LRU (insertion-order, below) | stock GPTCache                     |
 | 2   | off  | LFU                          | the real floor                     |
 | 3   | off  | Biton & Friedman substitute  | primary comparator                 |
 | 4   | on   | LFU                          | the gate alone                     |
@@ -20,6 +20,10 @@ here to isolate.
 Row 2 (LFU), not row 1 (LRU), is the comparison of record throughout: Biton & Friedman's
 own finding is that LRU is weak on semantic workloads, so an improvement over LRU alone
 isn't a result.
+
+The row-1 policy string stays "LRU" because committed results.csv rows carry that value,
+but the harness's index never advances last_access, so it selects by insertion time. The
+report calls this row "insertion-order eviction"; see benchmarks/harness.py's docstring.
 
 Same trace generation and cache size as the bracketing experiment (brackets.py):
 n_tenants=5, n_clusters=10,

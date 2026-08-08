@@ -13,11 +13,18 @@ out of scope here); a later pass can swap it out once real numbers exist.
 Hit latency and extension overhead (index lookup + gate check) are measured for real with
 time.perf_counter() around the actual decide() call.
 
-This harness's built-in index does exact-text-match lookup, the same stand-in used in
-tests/test_stock_parity.py. No embedding-based semantic index exists on main yet, so
-paraphrase pairs in a trace will not hit here until a real index is
-wired in later. Gate, eviction policy, and staleness table are supplied by the caller and
-only need to satisfy the Protocols in gptcache_ext.contracts.
+The built-in ExactMatchIndex below is only the default fallback, used by the smoke
+benchmark and tests/test_stock_parity.py. Every experiment runner behind the report passes
+benchmarks.semantic_index.SemanticIndex (brute-force cosine at GPTCache's default 0.8
+threshold) instead, so paraphrase pairs do hit there. Gate, eviction policy, and staleness
+table are supplied by the caller and only need to satisfy the Protocols in
+gptcache_ext.contracts.
+
+Known limitation, stated in the report (Section 4.2): neither index advances last_access on
+a hit, so LRUEviction here selects by insertion time. The report labels that baseline
+"insertion-order eviction" rather than LRU for exactly this reason; true LRU is untested.
+Fixing it is a one-line change to bump_freq below, but it changes every committed
+results.csv row that involves eviction, so it is deferred rather than done silently.
 """
 import hashlib
 import math
@@ -148,6 +155,9 @@ class ExactMatchIndex:
         return meta
 
     def bump_freq(self, text: str) -> None:
+        """Increment freq on a hit. Deliberately leaves last_access untouched: see this
+        module's docstring for why LRUEviction consequently behaves as insertion-order
+        eviction throughout, and how the report reports it."""
         meta = self._by_text[text]
         self._by_text[text] = EntryMeta(
             entry_id=meta.entry_id, cluster_id=meta.cluster_id, answer_id=meta.answer_id,

@@ -3,8 +3,11 @@ contract as benchmarks.harness.ExactMatchIndex, but search() ranks by cosine sim
 against a NumPy matrix of cached-entry embeddings instead of doing exact-text lookup.
 
 The scale here (thousands of cached entries at most) is far below where a vector-DB
-dependency would earn its keep, per the remediation brief; a dense matmul against the
-cache's own embedding matrix is fast enough that this stays a NumPy-only module.
+dependency would earn its keep: a dense matmul against the cache's own embedding matrix is
+fast enough that this stays a NumPy-only module.
+
+Inherits bump_freq from ExactMatchIndex, which does not advance last_access, so LRUEviction
+behaves as insertion-order eviction here too. See benchmarks/harness.py's module docstring.
 """
 import numpy as np
 
