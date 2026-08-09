@@ -179,10 +179,13 @@ treat it as a warm-cache lower bound rather than a cold-start estimate.
 | `make exp-cost-aware-eviction` | `results/cost_aware_eviction/results.csv` | Table `tab:costaware` |
 
 One committed result set,
-`results/ablation/size_term_isolation/`, has no runner and cannot be regenerated:
-FreCoS's eviction value function carries no size-normalization term to isolate, which
-is itself what that result established. See `gptcache_ext/eviction/frecos.py`'s module
-docstring and `results/ablation/size_term_isolation/summary.md`.
+`results/ablation/size_term_isolation/`, has no runner and cannot be regenerated: it was
+recorded at a 12,000-query trace scale, on an earlier metric schema, by a `no_size` code
+path that no longer exists. It is what established that FreCoS's value function needs no
+size-normalization term, so the term was dropped and the toggle with it. See
+`gptcache_ext/eviction/frecos.py`'s module docstring and
+`results/ablation/size_term_isolation/summary.md`, which also notes that its
+`cost_saved_usd` uses a different definition from every later run.
 
 `make figures` regenerates all four PNGs under `analysis/figures/` plus
 `analysis/figures/supplementary.csv` from the committed CSVs above (~2s; no figure is
@@ -207,7 +210,8 @@ comparisons marked exempt, and the ten-member secondary family.
 see https://tectonic-typesetting.github.io/, not bundled by `make install`).
 
 `make experiments && make figures && make report`, run in that order from a clean
-clone, reproduces every artifact this report cites.
+clone, reproduces every artifact this report cites except
+`results/ablation/size_term_isolation/`, noted above.
 
 Appendix B of the report (`tab:appendix`) maps the code and data artifacts the report
 cites to their paths in this repository.

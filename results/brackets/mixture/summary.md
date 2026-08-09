@@ -33,7 +33,7 @@ stdlib random, seeded 12345.
 | lambda_source | median stale_hit_rate | 95% CI | median cost_saved_usd | median cluster_ari | median false_hit_rate |
 |---|---|---|---|---|---|
 | global | 0.1889 | (0.1555, 0.2235) | 0.232 | 0.395 | 0.891 |
-| learned | 0.1542 | (0.1244, 0.2193) | 0.238 | 0.395 | 0.896 |
+| learned | 0.1542 | (0.1244, 0.2193) | 0.237 | 0.395 | 0.896 |
 | oracle | 0.1195 | (0.0992, 0.1447) | 0.244 | 0.395 | 0.908 |
 
 Mann-Whitney U, stale_hit_rate. p is raw; `make multiple-comparisons` prints the

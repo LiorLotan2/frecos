@@ -17,9 +17,12 @@ baseline behavior against each new release.
 The second reason is architectural fit, verified by reading the source rather than assumed
 from documentation. Every component this project modifies (the similarity threshold check,
 the hit/miss decision, the eviction policy registry) sits behind a registered, named
-interface. The extension is additive configuration: a new `EvictionBase` subclass registered
-through the existing hook, a metadata field added to `CacheData` via subclassing, and a serve-
-path gate that plugs into one shared decision helper. Nothing vendored needs to be edited.
+interface, with one exception. The extension is additive: a new `EvictionBase` subclass, an
+additive metadata store beside `CacheData` rather than a subclass of it, and a serve-path gate
+that plugs into one shared decision helper. The exception is eviction: `EvictionBase.get()` is
+a hardcoded if/elif chain with no lookup table a caller can register into, so reaching the new
+policy through GPTCache's own factory requires monkeypatching that one function
+(`gptcache_ext/eviction/frecos.py`). Nothing vendored is edited.
 Specific line references for these claims are collected in `docs/baseline-source-map.md`,
 which re-verifies every claim against the pinned commit actually vendored in this repo, so
 this document does not repeat unverified line numbers.
