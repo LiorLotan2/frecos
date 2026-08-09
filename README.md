@@ -5,6 +5,36 @@ staleness model, used both as a validity gate on the serve path and as a decay t
 eviction. It is a course project built on top of a pinned GPTCache fork; see
 `report/report.pdf` for the full write-up (design, experiments, results).
 
+## Quick start
+
+Clone, install, and run the test suite:
+
+```
+git clone https://github.com/LiorLotan2/frecos.git
+cd frecos
+python3 -m venv .venv && source .venv/bin/activate
+make install
+make test
+```
+
+That needs a Python 3.10+ interpreter; see "Install" below if your default `python3` is
+older. To skip local setup entirely and run the same checks in a container:
+
+```
+docker build -t frecos . && docker run frecos
+```
+
+To regenerate every number, table, and figure the report cites:
+
+```
+make experiments && make figures && make report
+```
+
+`make experiments` takes under 30 minutes with a warm embedding cache, `make figures` a
+couple of seconds, and `make report` needs `tectonic` installed separately. What each
+target produces, and the one committed result set that cannot be regenerated, are covered
+under "Reproducing the report".
+
 ## What the experiments found
 
 The validity gate works on the metric it targets. On the synthetic W1 workload it cuts
