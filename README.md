@@ -201,6 +201,10 @@ reproduce byte-identically on macOS too, since it is plain-text numeric output w
 no font rendering involved, making it the stronger reproducibility claim of the two
 artifacts `make figures` produces.
 
+The report's Figure 2 is not one of them. It is drawn in `report/report.tex` with pgfplots
+from the medians in `results/ablation/results.csv`, so it needs no PNG and `analysis/figures/`
+holds only the four matplotlib figures.
+
 `make multiple-comparisons` prints the Holm-Bonferroni correction the report carries in
 Appendix C: all twelve comparisons with raw and adjusted p, the two pre-registered primary
 comparisons marked exempt, and the ten-member secondary family.

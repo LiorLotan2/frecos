@@ -14,6 +14,8 @@
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{array}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 \hypersetup{
   colorlinks=true,
@@ -63,19 +65,22 @@ function. Cluster identity
 comes from k-means over embeddings from the cache's own encoder, so both consumers read only
 signals a deployed cache already has. The staleness table is the exception: it is fit
 against the generator's ground-truth expiry field, which a deployment would replace with a
-staleness detector or a stale-answer feedback channel. On a seeded synthetic
-workload with per-cluster content half-lives, the gate cuts stale-hit-rate roughly
-eightfold against a frequency-based floor, and fitting a rate per cluster beats pooling
-with a large, significant effect while falling short of an oracle that reads the true rates
-by a large but uncorrected margin. Counted per scored query rather than per served hit, useful hits (correct and
-non-stale) rise 61.3\%. None of that is free: the gate takes hit rate from 0.894 to
-0.336 ($-62.4\%$), mean latency from 15.64 to 95.55\,ms and throughput from 63.96 to 10.47
-queries/s.
-The cost-aware eviction term does not hold up: under real eviction pressure it
-is indistinguishable from a pure-frequency policy on cost saved, and plain LRU beats both at
-large but uncorrected effect sizes. False-hit-rate,
-made measurable by the semantic index and recorded in every run, is 0.89--0.92 in
-every bracket-style experiment, which limits the absolute numbers here though not the
+staleness detector or a stale-answer feedback channel.
+
+FreCoS is not a faster cache. It is a freshness-aware cache that buys answer validity with
+hit rate and with spend. The main result is that the gate works on the metric it targets: on a
+seeded synthetic workload with per-cluster content half-lives, it cuts stale-hit-rate roughly
+eightfold against a frequency-based floor, with perfect separation across seeds. Second,
+fitting a rate per cluster beats pooling one rate over the whole cache, with a large and
+significant effect, while still falling short of an oracle that reads the true rates. Third,
+and negatively, the cost-aware eviction term does not hold up: under real eviction pressure it
+is indistinguishable from a pure-frequency policy on cost saved, and plain LRU beats both. The
+price of the gate is hit rate, from 0.894 to 0.336, and spend, up 6.45-fold. Counted per
+scored query rather than per served hit, useful hits move the other way and rise 61.3\%. The
+latency and throughput regressions follow from serving fewer hits, each miss paying a
+simulated cost, rather than from the gate itself, whose measured overhead does not rise. One
+limitation bounds every absolute number here: false-hit-rate, made measurable by the semantic
+index, is 0.89--0.92 in every bracket-style experiment, so the claims are restricted to
 relative comparisons within an experiment.
 \end{abstract}
 
@@ -116,7 +121,8 @@ clustering instead of exact-match lookup and ground-truth cluster labels, so the
 label the gate and the eviction term read is one a deployed cache could recover, as is every
 other signal on the serving path. The staleness table is the exception: in all three modes it
 is calibrated against a generator field a deployed cache cannot observe. The second
-contribution is evidence that per-cluster staleness fitting does measurable work: learned
+contribution is evidence that per-cluster staleness fitting does measurable work under
+controlled conditions: learned
 rates beat a pooled rate with a large, significant effect, and fall a large margin short of
 an oracle that reads the generator's true rates, which is what a fitter working off an
 imperfect but real signal should do. The third is a negative result on cost-aware eviction,
@@ -124,8 +130,19 @@ measured under real eviction pressure: FreCoS's cost term is indistinguishable f
 pure-frequency floor, and plain LRU beats both, for a reason Section~\ref{ssec:costaware}
 traces to the workload rather than to any staleness mechanism.
 
-The gain has a price. Gating cuts hit rate from 0.894 to 0.336 and buys 6.45x the spend for a
-1.52x rise in cost saved (Table~\ref{tab:latency}).
+The thesis is narrower than Table~\ref{tab:latency} makes it look. FreCoS is not a faster
+cache. It is a freshness-aware cache that buys answer validity with hit rate and with spend:
+gating cuts hit rate from 0.894 to 0.336 and buys 6.45x the spend for a 1.52x rise in cost
+saved. The latency and throughput regressions in that table follow from serving fewer hits,
+each miss paying a simulated cost, rather than from the gate, whose measured overhead per
+decision does not rise (Section~\ref{sec:ablation}).
+
+One limitation bounds how any of those numbers should be read. False-hit-rate on this index is
+0.89--0.92, so the absolute usefulness of the cache on this workload is poor, and every claim
+here is restricted to relative comparisons within an experiment. The gate barely moves that
+rate (0.922 with the gate off against 0.911 with it on), so it belongs to the index and the
+workload rather than to anything FreCoS adds, and the similarity threshold most likely to move
+it is never swept (Table~\ref{tab:params}).
 
 \subsection{Related work}
 
@@ -171,20 +188,17 @@ behind it.
 \subsection{Why GPTCache}
 
 I extended GPTCache~\cite{gptcache} rather than a more actively maintained semantic cache,
-for four reasons. First, its most recent release (v0.1.44, August 2024) is frozen and the
-maintainers have stopped adding integrations, which makes it a better scientific control than
-a moving target. Second, it fits architecturally, which I checked by reading the vendored
-source rather than the documentation: every component I touch sits behind a named interface,
-so my extension only adds code (a metadata field via composition, a serve-path gate in one
-shared decision helper). Eviction is the one exception. I reach it by monkeypatching
-\texttt{EvictionBase.get()}, because that factory is a hardcoded if/elif chain with no lookup
-table a caller could add to; Appendix~A verifies that path end to end against GPTCache's own
-eviction factory, and I never edit vendored code.
-
-Third, GPTCache is the baseline the closest prior art already uses, so I could in principle
-run Biton and Friedman's released policy directly, though in practice I substituted a
-documented proxy (Section~\ref{sec:ablation}). Fourth, its default embedding backend runs
-CPU-deterministically, keeping every run reproducible without a GPU.
+for four reasons. Its most recent release (v0.1.44, August 2024) is frozen and the maintainers
+have stopped adding integrations, which makes it a better scientific control than a moving
+target. It also fits architecturally, which I verified by reading the vendored source: every
+component I touch sits behind a named interface, so my extension only adds code (a metadata
+field via composition, a serve-path gate in one shared decision helper). Eviction is the one
+exception, reached by monkeypatching \texttt{EvictionBase.get()} because that factory is a
+hardcoded if/elif chain with no lookup table a caller could add to. Appendix~A verifies that
+path against GPTCache's own eviction factory, and I never edit vendored code. Third, GPTCache
+is the baseline the closest prior art already uses, though in practice I substituted a
+documented proxy for their policy (Section~\ref{sec:ablation}). Finally, its default embedding
+backend runs CPU-deterministically, keeping every run reproducible without a GPU.
 
 \subsection{What GPTCache does today}
 
@@ -204,13 +218,13 @@ lifecycle: as a hard validity gate when serving a candidate hit, and as a soft d
 when choosing an eviction victim. Stale-hit-rate, the fraction of served hits whose content
 was already invalid, is the metric that makes both uses visible.
 
-\paragraph{Clustering.} Cluster assignment comes from a fixed, seeded k-means over
-cached-query embeddings from GPTCache's default ONNX model, fit once per trace on the
-calibration split, with every row assigned to its nearest centroid. Nothing downstream
-ever reads the generator's true label; it is recorded only to compute the adjusted Rand
-index against the learned assignment (\texttt{cluster\_ari}, reported with every
-bracket-style result). Both consumers read the same, possibly wrong, cluster identity
-off the same \texttt{EntryMeta} and neither recomputes it, so they cannot disagree.
+\paragraph{Clustering.} A fixed, seeded k-means runs once per trace over cached-query
+embeddings from GPTCache's default ONNX model, fit on the calibration split. Every row then
+takes its nearest centroid. Nothing downstream ever reads the generator's true label. It is
+recorded only to score the learned assignment by adjusted Rand index
+(\texttt{cluster\_ari}, reported with every bracket-style result). Both consumers read the
+same, possibly wrong, cluster identity off one \texttt{EntryMeta} and neither recomputes it,
+so they cannot disagree.
 
 \paragraph{Fitting.} For each cluster, a decay rate $\lambda_c$ is fit from observed
 staleness in a held-out calibration split, assuming exponential validity decay:
@@ -348,12 +362,14 @@ real external fit, and a limit on external validity.
 \label{ssec:simmodel}
 
 The harness is a pure trace replayer; no language model is ever called. On a miss, response
-content and cost are whatever the trace recorded, and miss latency is drawn from a seeded
-log-normal scaled by entry size, deterministic per query: a documented placeholder, not fit to
-a real trace. Hit latency and extension overhead (index lookup plus gate check) are measured
-for real, about 1\,ms per decision (Table~\ref{tab:latency}), dominated by the cosine search
-rather than the gate. Reported latency is therefore a hybrid of measured and simulated cost:
-a deliberate trade that keeps runs free and deterministic, but a real limitation.
+content and regeneration cost are whatever the trace recorded. Miss latency is not. It is
+drawn from a seeded log-normal scaled by entry size, deterministic per query, a documented
+placeholder rather than a fit to a real trace. Cost and latency are therefore synthetic in
+different senses, and only latency has a random number generator behind it. Hit latency and
+extension overhead (index lookup plus gate check) are measured for real, about 1\,ms per
+decision (Table~\ref{tab:latency}), dominated by the cosine search rather than the gate.
+Reported latency is a hybrid of measured and simulated cost, which keeps runs free and
+deterministic but is a real limitation.
 
 Lookup uses \texttt{benchmarks.semantic\_index.SemanticIndex}, brute-force cosine similarity
 at GPTCache's default 0.8 threshold. The threshold lives in
@@ -375,12 +391,12 @@ excluded from every metric.
 
 Stale-hit-rate is the fraction of served hits where serve time exceeds the entry's true
 expiry. False-hit-rate is the fraction where the served answer's identity does not match the
-query's. Useful-hit-rate is the fraction of served hits (not of all scored queries) both
-correct and non-stale, counted by a per-row predicate
-(\texttt{benchmarks.metrics.is\_useful\_hit}) rather than reconstructed as
-$(n_\text{hits} - n_\text{stale} - n_\text{false}) / n_\text{hits}$: \texttt{is\_stale\_hit}
-and \texttt{is\_false\_hit} are independent predicates that can both hold of one hit, so the
-subtraction double-counts the overlap and goes negative once both rates are large.
+query's. Useful-hit-rate is the fraction of served hits (not of all scored queries) that are
+both correct and non-stale. It comes from a per-row predicate
+(\texttt{benchmarks.metrics.is\_useful\_hit}), not from
+$(n_\text{hits} - n_\text{stale} - n_\text{false}) / n_\text{hits}$. One hit can be both stale
+and false, so that subtraction double-counts the overlap and goes negative once both rates
+are large.
 
 Cost saved sums regeneration cost over useful hits only: a hit returning an expired answer,
 or an answer to a different question, saved no backend call the caller would have accepted.
@@ -466,12 +482,12 @@ oracle, a secondary comparison, separate with a large effect in the same raw dir
 ($U_a = 24.0$, raw $p \approx 0.016$, adjusted $p \approx 0.114$, $r \approx 0.92$): per-cluster
 fitting does not close the gap to a rate keyed to true cluster identity.
 
-The primary comparison is limited by how the experiment is built: the generator draws
-half-life from the same exponential family the fitter estimates by maximum likelihood, so
-learned versus global is parameter recovery inside that family, scored against the same field
-the generator planted. It shows that per-cluster rates are recoverable from imperfect real
-cluster assignments and that recovering them beats pooling, a weaker claim than a deployment
-result. Section~\ref{ssec:misspec} relaxes the family assumption; the scoring field stays.
+The primary comparison has a built-in limit. W1 draws half-life from the same exponential
+family the fitter estimates by maximum likelihood, and both are scored against the field the
+generator planted. So this measures parameter recovery under a correctly specified model,
+not deployment performance. What it does show is that per-cluster rates are recoverable from
+imperfect real cluster assignments, and that recovering them beats pooling.
+Section~\ref{ssec:misspec} relaxes the family assumption; the scoring field stays.
 
 False-hit-rate stays high in all three arms (median 0.90--0.91), for the
 same-topic/different-aspect reason of Section~\ref{ssec:simmodel}; it caveats every absolute
@@ -560,6 +576,40 @@ Row & Configuration & Stale-hit-rate & Hit rate & False-hit-rate \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.66\textwidth, height=4.7cm,
+  ybar, bar width=12pt,
+  ymin=0, ymax=1.18,
+  ytick={0,0.2,0.4,0.6,0.8,1.0},
+  ylabel={Median rate},
+  symbolic x coords={{stale-hit-rate},{hit rate},{false-hit-rate}},
+  xtick=data,
+  enlarge x limits=0.3,
+  nodes near coords,
+  every node near coord/.append style={font=\tiny, /pgf/number format/fixed,
+    /pgf/number format/precision=3, /pgf/number format/fixed zerofill},
+  legend style={at={(0.5,1.02)}, anchor=south, legend columns=2, draw=none, font=\small,
+    /tikz/every even column/.append style={column sep=10pt}},
+  ymajorgrids, grid style={dashed,gray!30},
+  tick label style={font=\small},
+]
+\addplot+[every node near coord/.append style={xshift=-7pt}]
+  coordinates {({stale-hit-rate},0.546) ({hit rate},0.894) ({false-hit-rate},0.922)};
+\addplot+[every node near coord/.append style={xshift=7pt}]
+  coordinates {({stale-hit-rate},0.068) ({hit rate},0.336) ({false-hit-rate},0.911)};
+\legend{gate off (LFU floor), gate on (FreCoS)}
+\end{axis}
+\end{tikzpicture}
+\caption{The trade this report is about, in one experiment. Turning the gate on collapses
+stale-hit-rate and costs most of the hit rate, while false-hit-rate barely moves: the gate is
+not what makes the absolute numbers poor. Medians over 5 seeds, rows 2 and 5 of
+Table~\ref{tab:ablation}; drawn from \texttt{results/ablation/results.csv}.}
+\label{fig:coretradeoff}
+\end{figure}
+
 The gate's own effect, measured by the second primary comparison of row 4 against the
 floor, is large and significant: with row 4 as the first sample, $U_a = 0.0$, $p \approx
 0.0090$, $r \approx -1.00$, perfect separation below the floor, cutting stale-hit-rate
@@ -598,9 +648,10 @@ cache-size sweep, but with no competing policy beside it.
 \begin{table}[H]
 \centering
 \caption{Latency and resource use at the LFU floor (row 2) and at gate-on FreCoS eviction
-(row 5), medians over 5 seeds, with the relative change between them. Latency,
-throughput and cost are all dominated by the simulated miss-cost distribution
-(Section~\ref{ssec:simmodel}); only overhead and CPU are measured quantities. Extension
+(row 5), medians over 5 seeds, with the relative change between them. Latency and throughput
+are dominated by the simulated miss-latency distribution (Section~\ref{ssec:simmodel}). The
+two cost rows are not: both sum the regeneration cost each trace row records, so spend is a
+real cost of gating rather than a simulation artifact. Overhead and CPU are measured. Extension
 overhead and cost saved are the only rows that improve, and the text below shows why the
 overhead and RSS changes are run-to-run variation rather than effects of the gate.}
 \label{tab:latency}
@@ -615,8 +666,8 @@ Latency, p50 (ms), simulation-dominated & 0.89 & 81.42 & $+9035\%$ \\
 Latency, p95 (ms), simulation-dominated & 124.40 & 280.50 & $+125\%$ \\
 Latency, p99 (ms), simulation-dominated & 267.24 & 419.42 & $+56.9\%$ \\
 Throughput (queries/s), simulation-dominated & 63.96 & 10.47 & $-83.6\%$ \\
-Cost spent (USD), simulation-dominated & 0.669 & 4.317 & $+545\%$ \\
-Cost saved (USD), simulation-dominated & 0.126 & 0.191 & $+51.8\%$ \\
+Cost spent (USD), trace-recorded & 0.669 & 4.317 & $+545\%$ \\
+Cost saved (USD), trace-recorded & 0.126 & 0.191 & $+51.8\%$ \\
 Peak RSS (MB), sampled & 179.3 & 183.7 & $+2.5\%$ \\
 CPU (\%), measured & 61.3 & 72.8 & $+18.8\%$ \\
 \bottomrule
@@ -792,7 +843,33 @@ Stale-hit-rate falls to zero and useful-hit-rate rises from 0.04 to 0.46.}
 \section{Discussion}
 \label{sec:discussion}
 
-Three findings come out of this, at very different strengths. The gate is the strongest. It cuts
+\begin{table}[H]
+\centering
+\caption{The questions this report set out to answer, and where each is answered. Full
+statistics stay in the sections named.}
+\label{tab:keyfindings}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{5.4cm}>{\raggedright\arraybackslash}p{2.2cm}l}
+\toprule
+Question & Result & Verdict & Where \\
+\midrule
+Does freshness gating cut stale hits?
+& 0.546 to 0.068, 8.07-fold, perfect separation across seeds & Yes & \ref{sec:ablation} \\
+Does a rate per cluster beat one pooled rate?
+& 0.091 to 0.068, $r \approx -0.84$, $p \approx 0.028$ & Yes & \ref{sec:brackets} \\
+Does cost-aware eviction beat LFU?
+& 0.138 against 0.120 cost saved, $r \approx 0.04$; LRU beats both & No & \ref{ssec:costaware} \\
+Does FreCoS improve conventional cache performance?
+& Hit rate 0.894 to 0.336, spend up 6.45x & No, that is the trade & \ref{sec:ablation} \\
+Are the absolute rates production-realistic?
+& False-hit-rate 0.89--0.92 throughout & No, synthetic workload & \ref{ssec:simmodel} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:keyfindings} collects the answers. The three findings behind them differ
+sharply in strength. The gate is the strongest. It cuts
 stale-hit-rate roughly 8-fold against the LFU floor with perfect separation across seeds, and
 does so \emph{independently of clustering quality}, because the same assignment is used at
 calibration and at serve time: a wrong but consistent cluster still yields a usable TTL. That
@@ -814,21 +891,26 @@ saved, and plain LRU beats both, because access recency tracks creation age on t
 With that structure, a policy with no staleness model at all is hard to beat.
 
 Sensitivity to parameters splits the same way. Across the 13 points of the three sweeps in
-Section~\ref{ssec:sweeps} (cache size, TTL confidence, cluster count), gate-on
-stale-hit-rate never exceeds 0.142, at the loosest TTL confidence tested; the other twelve sit
-between 0.000 and 0.089, far below the 0.546 the ungated floor reaches in
-Section~\ref{sec:ablation}. That is a cross-experiment comparison at a different budget, and
-no sweep runs a gate-off arm, so it is the gate held on across parameter space rather than its
-effect re-tested at every point. Only TTL confidence moves an outcome materially, trading
-stale-hit-rate against useful-hit-rate monotonically, which makes it a deployment knob rather
-than a tuned constant. Three tunables stay at their defaults, marked so in Table~\ref{tab:params}:
-the similarity threshold, $\kappa$, and the calibration fallback count. Nothing here speaks to
-their effect, and the similarity threshold is the one most likely to move false-hit-rate.
+Section~\ref{ssec:sweeps}, gate-on stale-hit-rate never exceeds 0.142, at the loosest TTL
+confidence tested; the other twelve sit between 0.000 and 0.089, far below the 0.546 the
+ungated floor reaches in Section~\ref{sec:ablation}. That is a cross-experiment comparison at
+a different budget, and no sweep runs a gate-off arm, so read it as the gate held on across
+parameter space rather than re-tested at every point. Only TTL confidence moves an outcome
+materially, trading stale-hit-rate against useful-hit-rate monotonically, which makes it a
+deployment knob rather than a tuned constant. Three tunables stay at their defaults, marked so
+in Table~\ref{tab:params}: the similarity threshold, $\kappa$, and the calibration fallback
+count. Nothing here speaks to their effect.
 
-Two limitations cut across everything above. First, false-hit-rate sits at 0.89--0.92 in
-every bracket-style experiment (Section~\ref{ssec:simmodel}) and moves from 0.946 to 0.542
-across the TTL sweep of Section~\ref{ssec:sweeps}. Within an experiment it applies across
-arms, so relative comparisons stand, but no absolute number here should be read as production-realistic. Second,
+Two limitations cut across everything above. First, the absolute usefulness of this cache is
+poor. False-hit-rate sits at 0.89--0.92 in every bracket-style experiment
+(Section~\ref{ssec:simmodel}) and moves from 0.946 to 0.542 across the TTL sweep of
+Section~\ref{ssec:sweeps}. Every claim in this report is therefore restricted to relative
+comparisons within an experiment, where the rate applies across arms alike, and no absolute
+number here should be read as production-realistic. Two things bound how far that reaches. The
+gate is not the cause: the ungated floor runs at 0.922 against the gated 0.911, so the rate
+belongs to the index and the workload. And the knob most likely to move it, the 0.8 similarity
+threshold, is fixed and never swept, so this is an untested axis rather than a measured
+ceiling. Second,
 circularity: stale-hit-rate is scored against \texttt{valid\_until}, and that same field
 supplies the oracle arm's lambda \emph{and} the calibration intervals the learned and global
 arms fit, so the metric, its ground truth, the oracle ceiling, and the first primary
