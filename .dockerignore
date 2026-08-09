@@ -5,3 +5,6 @@ __pycache__
 .benchmarks
 docs
 .claude
+.venv
+.embedding_cache
+.DS_Store
