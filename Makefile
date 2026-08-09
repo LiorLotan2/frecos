@@ -8,8 +8,8 @@ PYTEST := $(RUNPY) -m pytest
 	figures multiple-comparisons report
 
 install:
-	@$(PYTHON) -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" \
-		|| (echo "error: $(PYTHON) is $$($(PYTHON) --version 2>&1); this project requires Python 3.10+ (numpy==2.2.6 has no wheels for older versions). Point PYTHON at a 3.10+ interpreter, e.g. \`make install PYTHON=python3.13\`." && exit 1)
+	@$(PYTHON) -c "import sys; sys.exit(0 if (3, 10) <= sys.version_info < (3, 14) else 1)" \
+		|| (echo "error: $(PYTHON) is $$($(PYTHON) --version 2>&1); this project requires Python 3.10 through 3.13 (numpy==2.2.6 publishes no wheels below 3.10, and onnxruntime==1.23.2 publishes none for 3.14+). Point PYTHON at an interpreter in that range, e.g. \`make install PYTHON=python3.13\`." && exit 1)
 	$(PYTHON) -m pip install -r requirements.txt
 
 test:

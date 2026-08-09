@@ -17,8 +17,11 @@ make install
 make test
 ```
 
-That needs a Python 3.10+ interpreter; see "Install" below if your default `python3` is
-older. To skip local setup entirely and run the same checks in a container:
+That needs a Python 3.10 through 3.13 interpreter, and a network connection on the first
+run so the embedding model can be fetched. If your default `python3` falls outside that
+range, name one explicitly (`python3.13 -m venv .venv`); see "Install" below.
+
+To skip local setup entirely and run the same checks in a container:
 
 ```
 docker build -t frecos . && docker run frecos
@@ -102,10 +105,12 @@ embeddings determine cluster assignment and similarity ranks used throughout.
 
 ## Install
 
-Requires Python 3.10 or newer: `requirements.txt` pins `numpy==2.2.6`, whose wheels are
-only published for CPython 3.10+. On a stock macOS `python3` (often 3.9), `pip install
--r requirements.txt` fails with a resolver error that does not name numpy as the cause;
-`make install` checks this and fails fast with a clearer message instead.
+Requires Python 3.10 through 3.13, and the range is bounded at both ends by pinned wheels:
+`numpy==2.2.6` publishes none below 3.10, and `onnxruntime==1.23.2` publishes none for 3.14
+or newer. Outside that range `pip install -r requirements.txt` fails with a resolver error
+that does not name the interpreter as the cause, so `make install` checks the version first
+and fails fast with a clearer message. This bites in both directions: a stock macOS
+`python3` is often 3.9, while a current Homebrew `python3` is already 3.14.
 
 With conda:
 
