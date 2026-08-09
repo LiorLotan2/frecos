@@ -72,10 +72,12 @@ hit rate and with spend. The main result is that the gate works on the metric it
 seeded synthetic workload with per-cluster content half-lives, it cuts stale-hit-rate roughly
 eightfold against a frequency-based floor, with perfect separation across seeds. Second,
 fitting a rate per cluster beats pooling one rate over the whole cache, with a large and
-significant effect, while still falling short of an oracle that reads the true rates. Third,
-and negatively, the cost-aware eviction term does not hold up: under real eviction pressure it
+significant effect, while still falling short of an oracle that reads the true rates by a
+margin that is large but does not survive correction. Third, the cost-aware eviction term does
+not hold up: under real eviction pressure it
 is indistinguishable from a pure-frequency policy on cost saved, and plain LRU beats both. The
-price of the gate is hit rate, from 0.894 to 0.336, and spend, up 6.45-fold. Counted per
+gate pays for that with hit rate, which falls from 0.894 to 0.336, and with spend, which
+rises 6.45-fold. Counted per
 scored query rather than per served hit, useful hits move the other way and rise 61.3\%. The
 latency and throughput regressions follow from serving fewer hits, each miss paying a
 simulated cost, rather than from the gate itself, whose measured overhead does not rise. One
@@ -130,18 +132,17 @@ measured under real eviction pressure: FreCoS's cost term is indistinguishable f
 pure-frequency floor, and plain LRU beats both, for a reason Section~\ref{ssec:costaware}
 traces to the workload rather than to any staleness mechanism.
 
-The thesis is narrower than Table~\ref{tab:latency} makes it look. FreCoS is not a faster
-cache. It is a freshness-aware cache that buys answer validity with hit rate and with spend:
-gating cuts hit rate from 0.894 to 0.336 and buys 6.45x the spend for a 1.52x rise in cost
-saved. The latency and throughput regressions in that table follow from serving fewer hits,
-each miss paying a simulated cost, rather than from the gate, whose measured overhead per
-decision does not rise (Section~\ref{sec:ablation}).
+All of that has a price. FreCoS is not a faster cache: it buys answer validity with hit rate
+and with spend. Gating cuts hit rate from 0.894 to 0.336 and pays 6.45x the spend for a 1.52x
+rise in cost saved (Table~\ref{tab:latency}). The latency and throughput regressions in that
+table are a consequence of serving fewer hits, each miss paying a simulated cost, and not of
+the gate, whose measured overhead per decision does not rise (Section~\ref{sec:ablation}).
 
-One limitation bounds how any of those numbers should be read. False-hit-rate on this index is
+One thing limits how far any of those numbers travel. False-hit-rate on this index is
 0.89--0.92, so the absolute usefulness of the cache on this workload is poor, and every claim
 here is restricted to relative comparisons within an experiment. The gate barely moves that
 rate (0.922 with the gate off against 0.911 with it on), so it belongs to the index and the
-workload rather than to anything FreCoS adds, and the similarity threshold most likely to move
+workload, not to anything FreCoS adds, and the similarity threshold most likely to move
 it is never swept (Table~\ref{tab:params}).
 
 \subsection{Related work}
@@ -188,9 +189,10 @@ behind it.
 \subsection{Why GPTCache}
 
 I extended GPTCache~\cite{gptcache} rather than a more actively maintained semantic cache,
-for four reasons. Its most recent release (v0.1.44, August 2024) is frozen and the maintainers
+for four reasons. First, its most recent release (v0.1.44, August 2024) is frozen and the
+maintainers
 have stopped adding integrations, which makes it a better scientific control than a moving
-target. It also fits architecturally, which I verified by reading the vendored source: every
+target. Second, it fits architecturally, which I verified by reading the vendored source: every
 component I touch sits behind a named interface, so my extension only adds code (a metadata
 field via composition, a serve-path gate in one shared decision helper). Eviction is the one
 exception, reached by monkeypatching \texttt{EvictionBase.get()} because that factory is a
@@ -364,7 +366,7 @@ real external fit, and a limit on external validity.
 The harness is a pure trace replayer; no language model is ever called. On a miss, response
 content and regeneration cost are whatever the trace recorded. Miss latency is not. It is
 drawn from a seeded log-normal scaled by entry size, deterministic per query, a documented
-placeholder rather than a fit to a real trace. Cost and latency are therefore synthetic in
+placeholder, not a fit to a real trace. Cost and latency are therefore synthetic in
 different senses, and only latency has a random number generator behind it. Hit latency and
 extension overhead (index lookup plus gate check) are measured for real, about 1\,ms per
 decision (Table~\ref{tab:latency}), dominated by the cosine search rather than the gate.
@@ -485,7 +487,7 @@ fitting does not close the gap to a rate keyed to true cluster identity.
 The primary comparison has a built-in limit. W1 draws half-life from the same exponential
 family the fitter estimates by maximum likelihood, and both are scored against the field the
 generator planted. So this measures parameter recovery under a correctly specified model,
-not deployment performance. What it does show is that per-cluster rates are recoverable from
+not deployment performance. It does show that per-cluster rates are recoverable from
 imperfect real cluster assignments, and that recovering them beats pooling.
 Section~\ref{ssec:misspec} relaxes the family assumption; the scoring field stays.
 
@@ -651,7 +653,7 @@ cache-size sweep, but with no competing policy beside it.
 (row 5), medians over 5 seeds, with the relative change between them. Latency and throughput
 are dominated by the simulated miss-latency distribution (Section~\ref{ssec:simmodel}). The
 two cost rows are not: both sum the regeneration cost each trace row records, so spend is a
-real cost of gating rather than a simulation artifact. Overhead and CPU are measured. Extension
+real cost of gating, not a simulation artifact. Overhead and CPU are measured. Extension
 overhead and cost saved are the only rows that improve, and the text below shows why the
 overhead and RSS changes are run-to-run variation rather than effects of the gate.}
 \label{tab:latency}
@@ -906,10 +908,10 @@ poor. False-hit-rate sits at 0.89--0.92 in every bracket-style experiment
 (Section~\ref{ssec:simmodel}) and moves from 0.946 to 0.542 across the TTL sweep of
 Section~\ref{ssec:sweeps}. Every claim in this report is therefore restricted to relative
 comparisons within an experiment, where the rate applies across arms alike, and no absolute
-number here should be read as production-realistic. Two things bound how far that reaches. The
-gate is not the cause: the ungated floor runs at 0.922 against the gated 0.911, so the rate
-belongs to the index and the workload. And the knob most likely to move it, the 0.8 similarity
-threshold, is fixed and never swept, so this is an untested axis rather than a measured
+number here should be read as production-realistic. The damage is bounded, though. The gate is not
+the cause: the ungated floor runs at 0.922 against the gated 0.911,
+so the rate belongs to the index and the workload. And the knob most likely to move it, the 0.8
+similarity threshold, is fixed and never swept, so this is an untested axis, not a measured
 ceiling. Second,
 circularity: stale-hit-rate is scored against \texttt{valid\_until}, and that same field
 supplies the oracle arm's lambda \emph{and} the calibration intervals the learned and global
