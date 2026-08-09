@@ -28,8 +28,11 @@ BOOTSTRAP_RESAMPLES = 10000
 # report/report.tex lands close to 1:1, which keeps its tick and axis labels near the
 # report's own 10-11pt body size. A 7-inch-wide source scaled into a 3.9-inch slot shrinks
 # 11pt type to under 5pt, which is what these two presets exist to avoid.
-#   default: rendered at 0.62\textwidth (about 3.9in) -> fig1, fig2
-#   small:   rendered at 0.48\textwidth (about 3.0in) in a minipage pair -> fig3, fig4
+#   default: rendered at 0.52\textwidth (about 3.3in) -> fig1, fig2
+#   small:   rendered at 0.44\textwidth (about 2.8in) in a minipage pair -> fig3, fig4
+# Those include widths shrink 11pt source type to roughly 8.5-9pt on the page. Enlarging the
+# slots to reach 10pt costs two extra pages; regenerating at a smaller source width is the
+# right fix, but it must be done on Linux or the committed PNG bytes stop matching CI.
 FIG_WIDTH = 4.2
 FIG_HEIGHT = 2.7
 FIG_WIDTH_SMALL = 3.3
